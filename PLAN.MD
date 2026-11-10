@@ -1,6 +1,6 @@
-# Booking System — Implementation Plan
+# Booking System - Implementation Plan
 
-## Milestone 1 — Project foundation & data model
+## Milestone 1 - Project foundation & data model
 **Goal:** Scaffold monorepo, configure Postgres via Docker, define full Prisma schema.
 
 Deliverables:
@@ -14,7 +14,7 @@ Deliverables:
 
 Done when: `db:generate` and `db:migrate` succeed, all tables exist, app boots with `/api/health` green.
 
-## Milestone 2 — Authentication & business profiles
+## Milestone 2 - Authentication & business profiles
 **Goal:** NextAuth with credentials + Google OAuth, role model, business/service CRUD.
 
 Deliverables:
@@ -27,7 +27,7 @@ Deliverables:
 
 Done when: login/logout works, roles enforced on API routes, seeded owner can manage services.
 
-## Milestone 3 — Availability & conflict-safe booking
+## Milestone 3 - Availability & conflict-safe booking
 **Goal:** Availability rules engine, slot generation, transactional booking with pessimistic locking.
 
 Deliverables:
@@ -40,7 +40,7 @@ Deliverables:
 
 Done when: slots returned correctly for date+service; concurrent bookings resolve to single success.
 
-## Milestone 4 — Customer-facing UI
+## Milestone 4 - Customer-facing UI
 **Goal:** Discovery, calendar, booking flow, my bookings with cancellation.
 
 Deliverables:
@@ -53,7 +53,7 @@ Deliverables:
 
 Done when: customer completes full booking + cancellation without DB access.
 
-## Milestone 5 — Admin dashboard
+## Milestone 5 - Admin dashboard
 **Goal:** Schedule overview, booking management, availability editor, service management.
 
 Deliverables:
@@ -65,7 +65,7 @@ Deliverables:
 
 Done when: owner views today's bookings, blocks a day, edits a service without DB client.
 
-## Milestone 6 — Email notifications
+## Milestone 6 - Email notifications
 **Goal:** Confirmation/cancellation emails via Resend + React Email, cron reminder.
 
 Deliverables:
@@ -77,7 +77,7 @@ Deliverables:
 
 Done when: completed booking triggers confirmation to customer + owner; reminders queued correctly.
 
-## Milestone 7 — Hardening & polish
+## Milestone 7 - Hardening & polish
 **Goal:** E2E tests, rate limiting, timezone edge cases, optimisation, empty/error states.
 
 Deliverables:
