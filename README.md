@@ -33,7 +33,7 @@ This project was built using the Claude Code harness using (**Claude Haiku 5.5 *
 - [x] **Milestone 1 - Project foundation & data model**
   Scaffold the monorepo, configure Postgres via Docker, and define the full Prisma schema. *Done when:* `db:generate` and `db:migrate` succeed, all tables exist, and the app boots with `/api/health` returning green.
 
-- [ ] **Milestone 2 - Authentication & business profiles**
+- [x] **Milestone 2 - Authentication & business profiles**
   NextAuth.js with credential + Google OAuth, role model (customer / business_owner / admin), and full CRUD for business profiles and services. *Done when:* login/logout works, roles are enforced on API routes, and a seeded business owner can manage their services.
 
 - [ ] **Milestone 3 - Availability & conflict-safe booking**
