@@ -1,0 +1,31 @@
+
+> booking-system@ dev C:\Users\matth\Documents\misc_code\Backend Fundies\AI Harness\booking-system
+> turbo run dev
+
+
+   • turbo 2.11.10
+   • Packages in scope: @booking/config, @booking/db, @booking/ui, @booking/web
+   • Running dev in 4 packages
+   • Remote caching disabled
+
+@booking/web:dev: cache bypass, force executing b9488e3f1d218b34
+@booking/web:dev: 
+@booking/web:dev: > @booking/web@0.0.0 dev C:\Users\matth\Documents\misc_code\Backend Fundies\AI Harness\booking-system\apps\web
+@booking/web:dev: > next dev
+@booking/web:dev: 
+@booking/web:dev:   ▲ Next.js 14.2.35
+@booking/web:dev:   - Local:        http://localhost:3000
+@booking/web:dev: 
+@booking/web:dev:  ✓ Starting...
+@booking/web:dev:  ⚠ Found lockfile missing swc dependencies, patching...
+@booking/web:dev:  ⨯ Failed to patch lockfile, please try uninstalling and reinstalling next in this workspace
+@booking/web:dev: TypeError: Cannot read properties of undefined (reading 'os')
+@booking/web:dev:     at fetchPkgInfo (C:\Users\matth\Documents\misc_code\Backend Fundies\AI Harness\booking-system\node_modules\.pnpm\next@14.2.35_react-dom@18.3.1_react@18.3.1__react@18.3.1\node_modules\next\dist\lib\patch-incorrect-lockfile.js:73:25)
+@booking/web:dev:     at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+@booking/web:dev:     at async Promise.all (index 0)
+@booking/web:dev:     at async patchIncorrectLockfile (C:\Users\matth\Documents\misc_code\Backend Fundies\AI Harness\booking-system\node_modules\.pnpm\next@14.2.35_react-dom@18.3.1_react@18.3.1__react@18.3.1\node_modules\next\dist\lib\patch-incorrect-lockfile.js:162:26)
+@booking/web:dev:  ✓ Ready in 2.8s
+@booking/web:dev:  ○ Compiling /api/health ...
+@booking/web:dev:  ✓ Compiled /api/health in 548ms (56 modules)
+@booking/web:dev:  GET /api/health 200 in 680ms
+ ELIFECYCLE  Command failed with exit code 4294967295.
