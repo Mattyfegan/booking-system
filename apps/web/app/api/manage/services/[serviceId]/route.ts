@@ -1,27 +1,22 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@booking/db";
-import { assertRole, HttpError } from "@/lib/authz";
+import { assertRole, HttpError, MANAGER_ROLES } from "@/lib/authz";
 import { errorResponse, readJson } from "@/lib/http";
-import { loadManagedBusiness, getSessionUser } from "@/lib/session";
+import { getSessionUser } from "@/lib/session";
 import { updateServiceSchema } from "@/lib/validation";
 
-type Ctx = { params: { id: string; serviceId: string } };
+type Ctx = { params: { serviceId: string } };
 
-const MANAGER_ROLES = ["BUSINESS_OWNER", "ADMIN"] as const;
-
-// Loads a service and confirms it belongs to the business in the URL (prevents cross-business access).
-async function loadService(businessId: string, serviceId: string) {
-  const service = await prisma.service.findFirst({ where: { id: serviceId, businessId } });
+async function loadService(serviceId: string) {
+  const service = await prisma.service.findUnique({ where: { id: serviceId } });
   if (!service) throw new HttpError(404, "Service not found");
   return service;
 }
 
 export async function GET(_req: Request, { params }: Ctx) {
   try {
-    const user = assertRole(await getSessionUser(), MANAGER_ROLES);
-    await loadManagedBusiness(params.id, user);
-    const service = await loadService(params.id, params.serviceId);
-    return NextResponse.json({ service });
+    assertRole(await getSessionUser(), MANAGER_ROLES);
+    return NextResponse.json({ service: await loadService(params.serviceId) });
   } catch (err) {
     return errorResponse(err);
   }
@@ -29,9 +24,8 @@ export async function GET(_req: Request, { params }: Ctx) {
 
 export async function PATCH(req: Request, { params }: Ctx) {
   try {
-    const user = assertRole(await getSessionUser(), MANAGER_ROLES);
-    await loadManagedBusiness(params.id, user);
-    await loadService(params.id, params.serviceId);
+    assertRole(await getSessionUser(), MANAGER_ROLES);
+    await loadService(params.serviceId);
     const input = updateServiceSchema.parse(await readJson(req));
 
     const service = await prisma.service.update({
@@ -55,9 +49,8 @@ export async function PATCH(req: Request, { params }: Ctx) {
 // so existing bookings keep a valid service reference.
 export async function DELETE(_req: Request, { params }: Ctx) {
   try {
-    const user = assertRole(await getSessionUser(), MANAGER_ROLES);
-    await loadManagedBusiness(params.id, user);
-    await loadService(params.id, params.serviceId);
+    assertRole(await getSessionUser(), MANAGER_ROLES);
+    await loadService(params.serviceId);
 
     const bookingCount = await prisma.booking.count({ where: { serviceId: params.serviceId } });
     if (bookingCount > 0) {

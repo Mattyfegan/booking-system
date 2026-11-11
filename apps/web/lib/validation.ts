@@ -10,34 +10,20 @@ export function isValidTimeZone(tz: string): boolean {
   }
 }
 
-export function slugify(input: string): string {
-  return input
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60);
-}
-
-const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-
+// Self-service signup creates customers only. Business owners and admins are provisioned out-of-band (seed or DB).
 export const registerSchema = z.object({
   name: z.string().trim().min(1).max(100),
   email: z.string().trim().toLowerCase().email().max(254),
   // bcrypt only uses the first 72 bytes, so longer passwords are rejected rather than silently truncated.
   password: z.string().min(8).max(72),
-  role: z.enum(["CUSTOMER", "BUSINESS_OWNER"]).default("CUSTOMER"),
 });
 
-export const createBusinessSchema = z.object({
-  name: z.string().trim().min(1).max(100),
-  slug: z.string().trim().toLowerCase().min(2).max(60).regex(slugPattern, "Use lowercase letters, numbers and hyphens").optional(),
+// Business profile (the single Business row).
+export const updateBusinessSchema = z.object({
+  name: z.string().trim().min(1).max(100).optional(),
   description: z.string().trim().max(1000).nullish(),
-  timezone: z.string().refine(isValidTimeZone, "Unknown IANA timezone").default("UTC"),
+  timezone: z.string().refine(isValidTimeZone, "Unknown IANA timezone").optional(),
 });
-
-export const updateBusinessSchema = createBusinessSchema.partial();
 
 export const createServiceSchema = z.object({
   name: z.string().trim().min(1).max(100),
@@ -99,19 +85,17 @@ export const availabilityOverrideSchema = z
   });
 
 export const availabilityQuerySchema = z.object({
-  businessId: z.string().min(1),
   serviceId: z.string().min(1),
   date: isoDate,
 });
 
 export const createBookingSchema = z.object({
-  businessId: z.string().min(1),
   serviceId: z.string().min(1),
   startAt: z.string().datetime({ offset: true, message: "Use an ISO 8601 timestamp" }),
   notes: z.string().trim().max(500).nullish(),
 });
 
-export type CreateBusinessInput = z.infer<typeof createBusinessSchema>;
+export type RegisterInput = z.infer<typeof registerSchema>;
 export type UpdateBusinessInput = z.infer<typeof updateBusinessSchema>;
 export type CreateServiceInput = z.infer<typeof createServiceSchema>;
 export type UpdateServiceInput = z.infer<typeof updateServiceSchema>;

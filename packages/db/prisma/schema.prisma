@@ -18,7 +18,6 @@ model User {
   role          Role      @default(CUSTOMER)
   accounts      Account[]
   sessions      Session[]
-  business      Business?
   bookings      Booking[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -64,26 +63,19 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
+// The single business this system serves (Riverside Barbers). Holds profile settings and is the
+// row that booking transactions lock (SELECT ... FOR UPDATE) so that all bookings serialise.
 model Business {
-  id          String    @id @default(cuid())
+  id          String   @id @default(cuid())
   name        String
-  slug        String    @unique
   description String?
-  timezone    String    @default("UTC")
-  ownerId     String    @unique
-  owner       User      @relation(fields: [ownerId], references: [id])
-  services     Service[]
-  availability AvailabilityRule[]
-  overrides    AvailabilityOverride[]
-  bookings     Booking[]
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  timezone    String   @default("UTC")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model Service {
   id           String    @id @default(cuid())
-  businessId   String
-  business     Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
   name         String
   description  String?
   durationMin  Int
@@ -97,35 +89,27 @@ model Service {
 
 model AvailabilityRule {
   id         String   @id @default(cuid())
-  businessId String
-  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
   dayOfWeek  Int
   startTime  String
   endTime    String
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  @@index([businessId, dayOfWeek])
+  @@index([dayOfWeek])
 }
 
 model AvailabilityOverride {
   id         String   @id @default(cuid())
-  businessId String
-  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  date       DateTime @db.Date
+  date       DateTime @unique @db.Date
   isClosed   Boolean  @default(false)
   startTime  String?
   endTime    String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
-
-  @@unique([businessId, date])
 }
 
 model Booking {
   id         String        @id @default(cuid())
-  businessId String
-  business   Business      @relation(fields: [businessId], references: [id])
   serviceId  String
   service    Service       @relation(fields: [serviceId], references: [id])
   customerId String
@@ -139,7 +123,7 @@ model Booking {
   createdAt  DateTime      @default(now())
   updatedAt  DateTime      @updatedAt
 
-  @@index([businessId, startAt])
+  @@index([startAt])
   @@index([customerId])
   @@index([serviceId])
 }

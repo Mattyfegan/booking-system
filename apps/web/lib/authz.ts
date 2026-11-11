@@ -20,8 +20,7 @@ export function assertRole(user: SessionUser | null | undefined, allowed: readon
   return user;
 }
 
-// ADMIN may manage any business; BUSINESS_OWNER only the business they own.
-export function assertCanManageBusiness(user: SessionUser, business: { ownerId: string }): void {
-  if (user.role === "ADMIN") return;
-  if (business.ownerId !== user.id) throw new HttpError(403, "You do not own this business");
-}
+// Roles that run the shop: manage services, hours, overrides and the business profile.
+export const MANAGER_ROLES = ["BUSINESS_OWNER", "ADMIN"] as const;
+// Roles that can book appointments. Business owners manage the shop; they do not book.
+export const CUSTOMER_ROLES = ["CUSTOMER", "ADMIN"] as const;

@@ -1,5 +1,5 @@
-// Integration tests: require the Postgres instance from docker-compose.yml (DATABASE_URL).
-// Each run creates its own users and business, and removes them afterwards.
+// Integration tests: require Postgres. They run against TEST_DATABASE_URL (see vitest.config.ts) and
+// remove every row they create, so they never touch the live Riverside Barbers data.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { BookingStatus, prisma, Role } from "@booking/db";
 import { HttpError, type SessionUser } from "../authz";
@@ -29,20 +29,13 @@ const DATES = {
 let owner: { id: string };
 let customer: { id: string };
 let otherCustomer: { id: string };
-let businessId: string;
 let serviceId: string;
 
 const sessionUser = (u: { id: string }, role: Role): SessionUser => ({ id: u.id, role });
 const at = (date: string, hhmm: string) => localToUtc(date, hhmm, TZ);
 
 async function book(date: string, hhmm: string, who = customer, now?: Date) {
-  return createBooking({
-    customerId: who.id,
-    businessId,
-    serviceId,
-    startAt: at(date, hhmm),
-    now,
-  });
+  return createBooking({ customerId: who.id, serviceId, startAt: at(date, hhmm), now });
 }
 
 async function expectHttpError(promise: Promise<unknown>, status: number) {
@@ -55,6 +48,16 @@ async function expectHttpError(promise: Promise<unknown>, status: number) {
 }
 
 beforeAll(async () => {
+  // The test database starts empty except for the business row, so wipe any leftover schedule first.
+  await prisma.availabilityRule.deleteMany();
+  await prisma.availabilityOverride.deleteMany();
+  const existing = await prisma.business.findFirst();
+  if (existing) {
+    await prisma.business.update({ where: { id: existing.id }, data: { timezone: TZ } });
+  } else {
+    await prisma.business.create({ data: { name: "Riverside Barbers", timezone: TZ } });
+  }
+
   owner = await prisma.user.create({
     data: { email: `owner-${RUN}@test.local`, name: "Test Owner", role: Role.BUSINESS_OWNER },
   });
@@ -65,33 +68,23 @@ beforeAll(async () => {
     data: { email: `other-${RUN}@test.local`, name: "Other Customer", role: Role.CUSTOMER },
   });
 
-  const business = await prisma.business.create({
-    data: { name: "Test Salon", slug: `test-${RUN}`, ownerId: owner.id, timezone: TZ },
-  });
-  businessId = business.id;
-
   // 60-minute service with a 10-minute buffer.
   const service = await prisma.service.create({
-    data: { businessId, name: "Cut", durationMin: 60, priceCents: 1500, bufferMin: 10 },
+    data: { name: `Cut ${RUN}`, durationMin: 60, priceCents: 1500, bufferMin: 10 },
   });
   serviceId = service.id;
 
   // Open 09:00-12:00 every day of the week.
   await prisma.availabilityRule.createMany({
-    data: [0, 1, 2, 3, 4, 5, 6].map((dayOfWeek) => ({
-      businessId,
-      dayOfWeek,
-      startTime: "09:00",
-      endTime: "12:00",
-    })),
+    data: [0, 1, 2, 3, 4, 5, 6].map((dayOfWeek) => ({ dayOfWeek, startTime: "09:00", endTime: "12:00" })),
   });
 });
 
 afterAll(async () => {
-  if (businessId) {
-    await prisma.booking.deleteMany({ where: { businessId } });
-    await prisma.business.delete({ where: { id: businessId } }); // cascades services, rules, overrides
-  }
+  await prisma.booking.deleteMany({ where: { serviceId } });
+  await prisma.service.deleteMany({ where: { id: serviceId } }); // inactive services created by tests are removed here too
+  await prisma.availabilityRule.deleteMany();
+  await prisma.availabilityOverride.deleteMany();
   const ids = [owner?.id, customer?.id, otherCustomer?.id].filter(Boolean) as string[];
   if (ids.length) await prisma.user.deleteMany({ where: { id: { in: ids } } });
   await prisma.$disconnect();
@@ -99,7 +92,7 @@ afterAll(async () => {
 
 describe("getAvailableSlots", () => {
   it("returns every step-aligned start where the full service fits inside the open hours", async () => {
-    const result = await getAvailableSlots(businessId, serviceId, DATES.book);
+    const result = await getAvailableSlots(serviceId, DATES.book);
     const times = result.slots.map((s) => s.localTime);
     // 60-min service in a 09:00-12:00 window, 15-min steps: 09:00 through 11:00.
     expect(times[0]).toBe("09:00");
@@ -108,13 +101,13 @@ describe("getAvailableSlots", () => {
     expect(result.timezone).toBe(TZ);
   });
 
-  it("returns 404 for an unknown business or an inactive service", async () => {
-    await expectHttpError(getAvailableSlots("does-not-exist", serviceId, DATES.book), 404);
+  it("returns 404 for an unknown service or an inactive one", async () => {
+    await expectHttpError(getAvailableSlots("does-not-exist", DATES.book), 404);
 
     const inactive = await prisma.service.create({
-      data: { businessId, name: "Hidden", durationMin: 30, priceCents: 0, isActive: false },
+      data: { name: "Hidden", durationMin: 30, priceCents: 0, isActive: false },
     });
-    await expectHttpError(getAvailableSlots(businessId, inactive.id, DATES.book), 404);
+    await expectHttpError(getAvailableSlots(inactive.id, DATES.book), 404);
     await prisma.service.delete({ where: { id: inactive.id } });
   });
 });
@@ -130,7 +123,7 @@ describe("createBooking", () => {
   it("removes overlapping slots including the buffer, then allows the first slot after it", async () => {
     await book(DATES.buffer, "09:00"); // occupies 09:00-10:10 with the 10-minute buffer
 
-    const times = (await getAvailableSlots(businessId, serviceId, DATES.buffer)).slots.map((s) => s.localTime);
+    const times = (await getAvailableSlots(serviceId, DATES.buffer)).slots.map((s) => s.localTime);
     expect(times).not.toContain("09:00");
     expect(times).not.toContain("09:15");
     expect(times).not.toContain("10:00"); // would overlap the buffer
@@ -152,16 +145,16 @@ describe("createBooking", () => {
     const booking = await book(DATES.dst, "09:00");
     expect(booking.startAt.toISOString()).toBe("2031-03-09T13:00:00.000Z");
 
-    const slot = (await getAvailableSlots(businessId, serviceId, DATES.dst)).slots[0];
+    const slot = (await getAvailableSlots(serviceId, DATES.dst)).slots[0];
     expect(slot.localTime).toBe("10:15"); // 09:00 is taken; the next free start is after the 10-minute buffer
   });
 
   it("rejects every slot on a closed override day", async () => {
     await prisma.availabilityOverride.create({
-      data: { businessId, date: new Date(`${DATES.closed}T00:00:00.000Z`), isClosed: true },
+      data: { date: new Date(`${DATES.closed}T00:00:00.000Z`), isClosed: true },
     });
 
-    const result = await getAvailableSlots(businessId, serviceId, DATES.closed);
+    const result = await getAvailableSlots(serviceId, DATES.closed);
     expect(result.slots).toEqual([]);
     await expectHttpError(book(DATES.closed, "09:00"), 409);
   });
@@ -169,7 +162,6 @@ describe("createBooking", () => {
   it("uses override hours instead of the weekly rules on that date", async () => {
     await prisma.availabilityOverride.create({
       data: {
-        businessId,
         date: new Date(`${DATES.overrideHours}T00:00:00.000Z`),
         isClosed: false,
         startTime: "10:00",
@@ -177,7 +169,7 @@ describe("createBooking", () => {
       },
     });
 
-    const times = (await getAvailableSlots(businessId, serviceId, DATES.overrideHours)).slots.map((s) => s.localTime);
+    const times = (await getAvailableSlots(serviceId, DATES.overrideHours)).slots.map((s) => s.localTime);
     expect(times).toEqual(["10:00"]); // a 60-minute service only fits once in a 10:00-11:00 window
     await expectHttpError(book(DATES.overrideHours, "09:00"), 409);
     await expect(book(DATES.overrideHours, "10:00")).resolves.toBeTruthy();
@@ -199,7 +191,7 @@ describe("createBooking", () => {
     }
 
     const stored = await prisma.booking.count({
-      where: { businessId, startAt: at(DATES.concurrentSame, "09:00"), status: BookingStatus.CONFIRMED },
+      where: { serviceId, startAt: at(DATES.concurrentSame, "09:00"), status: BookingStatus.CONFIRMED },
     });
     expect(stored).toBe(1);
   });
@@ -217,14 +209,14 @@ describe("createBooking", () => {
 describe("cancelBooking", () => {
   it("lets the customer cancel, sets CANCELLED, and frees the slot", async () => {
     const booking = await book(DATES.cancelCustomer, "09:00");
-    const before = (await getAvailableSlots(businessId, serviceId, DATES.cancelCustomer)).slots.map((s) => s.localTime);
+    const before = (await getAvailableSlots(serviceId, DATES.cancelCustomer)).slots.map((s) => s.localTime);
     expect(before).not.toContain("09:00");
 
     const cancelled = await cancelBooking(booking.id, sessionUser(customer, Role.CUSTOMER));
     expect(cancelled.status).toBe(BookingStatus.CANCELLED);
     expect(cancelled.cancelledAt).toBeInstanceOf(Date);
 
-    const after = (await getAvailableSlots(businessId, serviceId, DATES.cancelCustomer)).slots.map((s) => s.localTime);
+    const after = (await getAvailableSlots(serviceId, DATES.cancelCustomer)).slots.map((s) => s.localTime);
     expect(after).toContain("09:00");
     await expect(book(DATES.cancelCustomer, "09:00")).resolves.toBeTruthy();
   });

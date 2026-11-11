@@ -1,5 +1,12 @@
 # Booking System - Implementation Plan
 
+> **Scope change:** the system serves a single business, Riverside Barbers. The `Business` model is a settings
+> row (name, description, timezone) and the lock target for bookings. Services, availability rules, overrides and
+> bookings are not scoped to a business. Business owners log in with the seeded owner account; self-signup creates
+> customers only. Owner/admin routes live under `/api/manage/*`, the home page is the booking page, and
+> `/businesses` routes are removed. Milestones below are written for the original multi-business plan and are
+> kept as history.
+
 ## Milestone 1 - Project foundation & data model
 **Goal:** Scaffold monorepo, configure Postgres via Docker, define full Prisma schema.
 

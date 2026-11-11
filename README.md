@@ -1,6 +1,6 @@
 # Booking System
 
-An appointment booking platform for small businesses. Business owners configure their services and availability; customers browse, book, and cancel appointments through a clean web interface. Includes an admin dashboard and transactional email confirmations.
+Online appointment booking for **Riverside Barbers**. Customers pick a service, a date and a free time, then book and cancel through a web interface. The shop's owner manages services and opening hours. The system serves this one business only; it is not a multi-business platform.
 
 > A portfolio project - not intended for production use.
 
@@ -21,11 +21,11 @@ This project was built using the Claude Code harness using (**Claude Haiku 5.5 *
 
 ## Features
 
-- Business profiles with configurable services (name, duration, price, buffer time)
-- Weekly availability rules with per-date overrides (holidays, closures)
-- Conflict-safe booking via database-level transactions and pessimistic locking
-- Customer booking flow - browse businesses, pick a slot, confirm and cancel
-- Admin dashboard - today's schedule, booking management, availability editor
+- Services with duration, price and buffer time
+- Weekly opening hours with per-date overrides (holidays, closures)
+- Conflict-safe booking via a row lock on the business settings row (`SELECT ... FOR UPDATE`)
+- Customer booking flow on the home page: service, date, time, confirm, and cancel from My bookings
+- Owner dashboard - business profile and services (management UI is Milestone 5)
 - Transactional emails - booking confirmations and 24-hour reminders
 
 ## Milestones
@@ -63,12 +63,26 @@ docker compose up -d
 # Copy and fill in environment variables
 cp .env.example .env
 
-# Run migrations (Milestone 1 onwards)
+# Create the schema and seed Riverside Barbers (owner, customer, admin, services, hours, bookings)
 pnpm db:migrate
+pnpm db:seed
 
 # Start the dev server
 pnpm dev
 ```
+
+Seeded logins (password `password123`, or `SEED_PASSWORD`): `owner@example.com` (business owner), `customer@example.com` (customer), `admin@example.com` (admin).
+
+### Tests
+
+Integration tests write and delete rows, so they run against a separate database. Create it once, then push the schema to it:
+
+```bash
+docker exec booking-system-db psql -U postgres -c "CREATE DATABASE booking_system_test;"
+cd packages/db && DATABASE_URL="postgresql://postgres:postgres@localhost:5433/booking_system_test?schema=public" npx prisma db push
+```
+
+`TEST_DATABASE_URL` in `.env` makes `pnpm test` use that database instead of the live one.
 
 Open [http://localhost:3000](http://localhost:3000) and [http://localhost:3000/api/health](http://localhost:3000/api/health).
 

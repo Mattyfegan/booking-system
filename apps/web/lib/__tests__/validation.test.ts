@@ -1,20 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  createBusinessSchema,
   createServiceSchema,
   isValidTimeZone,
   registerSchema,
-  slugify,
+  updateBusinessSchema,
   updateServiceSchema,
 } from "../validation";
-
-describe("slugify", () => {
-  it("produces URL-safe slugs", () => {
-    expect(slugify("  Riverside Barbers & Co. ")).toBe("riverside-barbers-co");
-    expect(slugify("Café Déjà Vu")).toBe("cafe-deja-vu");
-    expect(slugify("!!!")).toBe("");
-  });
-});
 
 describe("isValidTimeZone", () => {
   it("accepts IANA zones and rejects garbage", () => {
@@ -25,16 +16,15 @@ describe("isValidTimeZone", () => {
 });
 
 describe("registerSchema", () => {
-  it("defaults role to CUSTOMER and normalises email", () => {
+  it("normalises email and has no role field", () => {
     const parsed = registerSchema.parse({ name: "A", email: " Use@Example.com ", password: "longenough" });
-    expect(parsed.role).toBe("CUSTOMER");
     expect(parsed.email).toBe("use@example.com");
+    expect("role" in parsed).toBe(false);
   });
 
-  it("rejects ADMIN self-registration", () => {
-    expect(registerSchema.safeParse({ name: "A", email: "a@b.co", password: "longenough", role: "ADMIN" }).success).toBe(
-      false,
-    );
+  it("strips any role sent by the client, so ADMIN self-registration is impossible", () => {
+    const parsed = registerSchema.parse({ name: "A", email: "a@b.co", password: "longenough", role: "ADMIN" });
+    expect("role" in parsed).toBe(false);
   });
 
   it("rejects passwords over bcrypt's 72-byte limit", () => {
@@ -42,14 +32,10 @@ describe("registerSchema", () => {
   });
 });
 
-describe("createBusinessSchema", () => {
-  it("rejects an unknown timezone", () => {
-    expect(createBusinessSchema.safeParse({ name: "X", timezone: "Nowhere/City" }).success).toBe(false);
-  });
-
-  it("rejects slugs with double hyphens and accepts clean slugs", () => {
-    expect(createBusinessSchema.safeParse({ name: "X", slug: "bad--slug" }).success).toBe(false);
-    expect(createBusinessSchema.safeParse({ name: "X", slug: "good-slug" }).success).toBe(true);
+describe("updateBusinessSchema", () => {
+  it("rejects an unknown timezone and accepts a valid one", () => {
+    expect(updateBusinessSchema.safeParse({ timezone: "Nowhere/City" }).success).toBe(false);
+    expect(updateBusinessSchema.safeParse({ timezone: "Europe/London" }).success).toBe(true);
   });
 });
 

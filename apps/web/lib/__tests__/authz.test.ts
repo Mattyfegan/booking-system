@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { assertCanManageBusiness, assertRole, HttpError } from "../authz";
+import { assertRole, CUSTOMER_ROLES, HttpError, MANAGER_ROLES } from "../authz";
 
 const owner = { id: "u-owner", role: "BUSINESS_OWNER" as const };
-const otherOwner = { id: "u-other", role: "BUSINESS_OWNER" as const };
 const customer = { id: "u-cust", role: "CUSTOMER" as const };
 const admin = { id: "u-admin", role: "ADMIN" as const };
 
@@ -31,18 +30,16 @@ describe("assertRole", () => {
   });
 });
 
-describe("assertCanManageBusiness", () => {
-  const business = { ownerId: owner.id };
-
-  it("allows the owning business owner", () => {
-    expect(statusOf(() => assertCanManageBusiness(owner, business))).toBeNull();
+describe("role groups", () => {
+  it("lets owners and admins manage the shop, but not customers", () => {
+    expect(assertRole(owner, MANAGER_ROLES)).toBe(owner);
+    expect(assertRole(admin, MANAGER_ROLES)).toBe(admin);
+    expect(statusOf(() => assertRole(customer, MANAGER_ROLES))).toBe(403);
   });
 
-  it("forbids a different business owner", () => {
-    expect(statusOf(() => assertCanManageBusiness(otherOwner, business))).toBe(403);
-  });
-
-  it("allows ADMIN on any business", () => {
-    expect(statusOf(() => assertCanManageBusiness(admin, business))).toBeNull();
+  it("lets customers and admins book, but not the business owner", () => {
+    expect(assertRole(customer, CUSTOMER_ROLES)).toBe(customer);
+    expect(assertRole(admin, CUSTOMER_ROLES)).toBe(admin);
+    expect(statusOf(() => assertRole(owner, CUSTOMER_ROLES))).toBe(403);
   });
 });

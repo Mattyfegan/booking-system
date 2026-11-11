@@ -7,7 +7,7 @@ import { registerSchema } from "@/lib/validation";
 
 const BCRYPT_ROUNDS = 12;
 
-// Self-service signup only creates CUSTOMER or BUSINESS_OWNER. ADMIN is granted out-of-band (seed or DB).
+// Self-service signup only creates CUSTOMER accounts. Owners and admins are provisioned by seed or DB.
 export async function POST(req: Request) {
   try {
     const input = registerSchema.parse(await readJson(req));
@@ -20,7 +20,7 @@ export async function POST(req: Request) {
         name: input.name,
         email: input.email,
         password: await bcrypt.hash(input.password, BCRYPT_ROUNDS),
-        role: input.role,
+        role: "CUSTOMER",
       },
       select: { id: true, email: true, role: true },
     });
