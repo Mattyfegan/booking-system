@@ -140,6 +140,11 @@ describe("createBooking", () => {
     await expectHttpError(book(DATES.grid, "09:00", customer, at(DATES.grid, "09:30")), 409); // already past
   });
 
+  it("rejects a past start using the real clock, as the HTTP route does", async () => {
+    // The route never injects `now`, so this exercises the default clock path that customers hit.
+    await expectHttpError(createBooking({ customerId: customer.id, serviceId, startAt: at("2020-01-06", "09:00") }), 409);
+  });
+
   it("uses the business timezone across the DST transition", async () => {
     // 09:00 on the spring-forward day is EDT (UTC-4), so 13:00Z, not 14:00Z.
     const booking = await book(DATES.dst, "09:00");

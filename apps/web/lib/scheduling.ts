@@ -103,6 +103,10 @@ export type CreateBookingInput = {
 //  4. Insert, then commit. The lock is released on commit.
 export async function createBooking(input: CreateBookingInput) {
   const now = input.now ?? new Date();
+  // Explicit rule, checked before taking the lock: a start time that has already passed is never bookable.
+  if (input.startAt.getTime() < now.getTime()) {
+    throw new HttpError(409, "That time has already passed");
+  }
 
   return prisma.$transaction(
     async (tx) => {

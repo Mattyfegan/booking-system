@@ -44,7 +44,11 @@ export function BookingPanel({ business, services, access, signInHref }: Booking
 
   const service = services.find((s) => s.id === serviceId) ?? null;
   const selectedSlot = slotsState.slots.find((s) => s.startAt === selectedStart) ?? null;
-  const visibleSlots = slotsState.slots.filter((s) => !heldStarts.includes(s.startAt));
+  // Hide held slots and any start time that has already passed (the server enforces this too).
+  const nowMs = Date.now();
+  const visibleSlots = slotsState.slots.filter(
+    (s) => !heldStarts.includes(s.startAt) && new Date(s.startAt).getTime() > nowMs,
+  );
 
   useEffect(() => {
     if (!serviceId || !date) return;
@@ -120,7 +124,9 @@ export function BookingPanel({ business, services, access, signInHref }: Booking
       {confirmation && (
         <Card className="flex flex-col gap-3 border-green-200 bg-green-50">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="font-semibold text-green-900">Booking confirmed</p>
+            <p className="font-semibold text-green-900">
+              {confirmation.phase === "saving" ? "Booking your appointment..." : "Booking confirmed"}
+            </p>
             <Badge tone="success">{confirmation.phase === "saving" ? "Saving..." : "Saved"}</Badge>
           </div>
           <p className="text-sm text-green-900">
