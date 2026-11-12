@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   conflicts,
   dayOfWeekFor,
+  generateDaySlots,
   generateSlots,
   isValidDateString,
   localToUtc,
@@ -187,6 +188,14 @@ describe("generateSlots", () => {
     const times = slots.map((s) => s.startAt.getTime());
     expect(new Set(times).size).toBe(times.length);
     expect(times).toEqual([...times].sort((a, b) => a - b));
+  });
+
+  it("generateDaySlots keeps booked starts in the list, flagged, instead of dropping them", () => {
+    const busy = [{ startAt: localToUtc(MONDAY, "09:00", TZ), endAt: localToUtc(MONDAY, "10:00", TZ), bufferMin: 0 }];
+    const day = generateDaySlots({ ...base, busy });
+    expect(localTimes(day)).toEqual(["09:00", "09:15", "09:30", "09:45", "10:00"]);
+    // 09:00-45 all start inside the booking; 10:00 is the first start after it.
+    expect(day.map((s) => s.booked)).toEqual([true, true, true, true, false]);
   });
 
   it("keeps wall-clock times stable across the DST transition", () => {

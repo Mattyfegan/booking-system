@@ -9,7 +9,7 @@ const prisma = new PrismaClient();
 const SEED_PASSWORD = process.env.SEED_PASSWORD ?? "password123";
 const DAY_MS = 24 * 60 * 60 * 1000;
 const BUSINESS_NAME = "Riverside Barbers";
-const TIMEZONE = "UTC";
+const TIMEZONE = "Pacific/Auckland";
 
 // 10:00 UTC on a day offset from today (negative = past).
 function atTenUtc(dayOffset: number): Date {

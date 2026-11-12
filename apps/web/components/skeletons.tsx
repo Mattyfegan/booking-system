@@ -42,7 +42,7 @@ export function BookingPageSkeleton() {
       </div>
       <div className="mb-6 flex flex-col gap-3">
         <Skeleton className="h-5 w-40" />
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 3 }, (_, i) => (
             <Skeleton key={i} className="h-20" />
           ))}
@@ -68,21 +68,27 @@ export function BookingPageSkeleton() {
   );
 }
 
+// My bookings: header, then two tables (upcoming and history), each with rows and a pager footer.
 export function BookingListSkeleton() {
   return (
     <PageShell>
-      <HeaderSkeleton />
-      <div className="flex flex-col gap-3">
-        {Array.from({ length: 4 }, (_, i) => (
-          <Card key={i} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-col gap-2">
-              <Skeleton className="h-5 w-48" />
-              <Skeleton className="h-4 w-64 max-w-full" />
-            </div>
-            <Skeleton className="h-8 w-24" />
-          </Card>
-        ))}
+      <div className="mb-8 flex flex-col gap-3">
+        <Skeleton className="h-1 w-12" />
+        <Skeleton className="h-9 w-56 max-w-full" />
+        <Skeleton className="h-4 w-96 max-w-full" />
       </div>
+      {["Upcoming", "History"].map((title) => (
+        <section key={title} className="mb-10 flex flex-col gap-3 last:mb-0">
+          <Skeleton className="h-6 w-32" />
+          <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+            <div className="flex flex-col gap-3 p-4">
+              {Array.from({ length: 5 }, (_, i) => (
+                <Skeleton key={i} className="h-6" />
+              ))}
+            </div>
+          </div>
+        </section>
+      ))}
     </PageShell>
   );
 }

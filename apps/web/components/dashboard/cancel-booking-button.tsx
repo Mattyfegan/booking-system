@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { CalendarX } from "lucide-react";
 import { Alert, Button, Modal } from "@booking/ui";
 
 export type CancelBookingButtonProps = {
@@ -37,7 +38,16 @@ export function CancelBookingButton({ bookingId, summary }: CancelBookingButtonP
 
   return (
     <div className="flex flex-col gap-1">
-      <Button type="button" variant="secondary" size="sm" disabled={submitting} onClick={() => setOpen(true)}>
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        disabled={submitting}
+        onClick={() => setOpen(true)}
+        aria-label={`Cancel booking: ${summary}`}
+        className="gap-1.5 whitespace-nowrap"
+      >
+        <CalendarX size={14} aria-hidden="true" />
         Cancel
       </Button>
       {error && !open && <Alert tone="error">{error}</Alert>}

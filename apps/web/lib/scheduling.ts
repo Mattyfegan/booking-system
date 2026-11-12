@@ -4,12 +4,12 @@ import { BookingStatus, prisma, type Prisma } from "@booking/db";
 import { HttpError, type SessionUser, MANAGER_ROLES } from "./authz";
 import { getBusiness } from "./business";
 import {
-  generateSlots,
+  generateDaySlots,
   localToUtc,
   windowsForDate,
   windowsOverlap,
   type BusyBooking,
-  type Slot,
+  type DaySlot,
   type TimeWindow,
   type WeeklyRule,
 } from "./availability";
@@ -20,15 +20,14 @@ type Db = Prisma.TransactionClient | typeof prisma;
 type BusinessRow = { id: string; timezone: string };
 type ServiceRow = { id: string; durationMin: number; bufferMin: number };
 
-// Computes the free slots for one local date. Runs on either the root client or a transaction client,
-// so booking creation reuses the exact same logic under its lock.
+// Every grid slot for one local date, each flagged booked or free. Runs on either the root client or a
+// transaction client, so booking creation reuses the exact same logic under its lock.
 async function computeDaySlots(
   db: Db,
   business: BusinessRow,
   service: ServiceRow,
   date: string,
-  now: Date,
-): Promise<Slot[]> {
+): Promise<DaySlot[]> {
   const dayStart = localToUtc(date, "00:00", business.timezone);
   // A booking lasts at most 480 minutes, so a one-day margin on each side covers every booking that can reach this day.
   const busyFrom = addDays(dayStart, -1);
@@ -57,24 +56,25 @@ async function computeDaySlots(
     bufferMin: b.service.bufferMin,
   }));
 
-  return generateSlots({
+  return generateDaySlots({
     date,
     timezone: business.timezone,
     windows: windowsForDate(date, rules, override),
     durationMin: service.durationMin,
     bufferMin: service.bufferMin,
     busy,
-    now,
   });
 }
 
-export async function getAvailableSlots(serviceId: string, date: string, now = new Date()) {
+// Returns every slot on the day with a `booked` flag. Past slots are not filtered here: the client
+// greys them out using its own live clock, and createBooking rejects them.
+export async function getAvailableSlots(serviceId: string, date: string) {
   const business = await getBusiness();
 
   const service = await prisma.service.findFirst({ where: { id: serviceId, isActive: true } });
   if (!service) throw new HttpError(404, "Service not found");
 
-  const slots = await computeDaySlots(prisma, business, service, date, now);
+  const slots = await computeDaySlots(prisma, business, service, date);
   return {
     serviceId,
     date,
@@ -83,6 +83,7 @@ export async function getAvailableSlots(serviceId: string, date: string, now = n
       startAt: s.startAt.toISOString(),
       endAt: s.endAt.toISOString(),
       localTime: formatInTimeZone(s.startAt, business.timezone, "HH:mm"),
+      booked: s.booked,
     })),
   };
 }
@@ -117,8 +118,10 @@ export async function createBooking(input: CreateBookingInput) {
       if (!service) throw new HttpError(404, "Service not found");
 
       const date = formatInTimeZone(input.startAt, business.timezone, "yyyy-MM-dd");
-      const slots = await computeDaySlots(tx, business, service, date, now);
-      const isAvailable = slots.some((s) => s.startAt.getTime() === input.startAt.getTime());
+      const slots = await computeDaySlots(tx, business, service, date);
+      const isAvailable = slots.some(
+        (s) => !s.booked && s.startAt.getTime() === input.startAt.getTime() && s.startAt.getTime() >= now.getTime(),
+      );
       if (!isAvailable) throw new HttpError(409, "That time is no longer available");
 
       return tx.booking.create({

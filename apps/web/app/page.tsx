@@ -31,9 +31,9 @@ export default async function HomePage() {
   return (
     <PageShell>
       <header className="mb-8 flex flex-col gap-2">
+        <span aria-hidden="true" className="h-1 w-12 rounded-full bg-brand-gold" />
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-3xl font-bold">{business.name}</h1>
-          <Badge>{business.timezone}</Badge>
+          <h1 className="text-3xl font-bold text-brand-green">{business.name}</h1>
         </div>
         <p className="max-w-2xl text-gray-600">{business.description ?? "Book your appointment online."}</p>
       </header>

@@ -76,20 +76,24 @@ export function windowsOverlap(a: TimeWindow, b: TimeWindow): boolean {
   return toMinutes(a.startTime) < toMinutes(b.endTime) && toMinutes(b.startTime) < toMinutes(a.endTime);
 }
 
-export function generateSlots(input: {
+export type DayInput = {
   date: string;
   timezone: string;
   windows: TimeWindow[];
   durationMin: number;
   bufferMin: number;
   busy: BusyBooking[];
-  now: Date;
   stepMin?: number;
-}): Slot[] {
+};
+
+// Every step-aligned start inside the open windows, including starts that are booked or already past.
+// The UI greys those out instead of hiding them. Callers decide what is bookable.
+export type DaySlot = Slot & { booked: boolean };
+
+export function generateDaySlots(input: DayInput): DaySlot[] {
   const stepMs = (input.stepMin ?? DEFAULT_SLOT_STEP_MIN) * MINUTE_MS;
   const durationMs = input.durationMin * MINUTE_MS;
-  const nowMs = input.now.getTime();
-  const seen = new Map<number, Slot>();
+  const seen = new Map<number, DaySlot>();
 
   for (const w of input.windows) {
     const winStart = localToUtc(input.date, w.startTime, input.timezone).getTime();
@@ -97,13 +101,21 @@ export function generateSlots(input: {
 
     // A slot must finish inside its window. Buffer time after the last appointment may extend past it.
     for (let t = winStart; t + durationMs <= winEnd; t += stepMs) {
-      if (t < nowMs || seen.has(t)) continue;
+      if (seen.has(t)) continue;
       const slot = { start: new Date(t), end: new Date(t + durationMs) };
-      const blocked = input.busy.some((b) => conflicts({ ...slot, bufferMin: input.bufferMin }, b));
-      if (blocked) continue;
-      seen.set(t, { startAt: slot.start, endAt: slot.end });
+      const booked = input.busy.some((b) => conflicts({ ...slot, bufferMin: input.bufferMin }, b));
+      seen.set(t, { startAt: slot.start, endAt: slot.end, booked });
     }
   }
 
   return [...seen.values()].sort((a, b) => a.startAt.getTime() - b.startAt.getTime());
+}
+
+// Bookable slots only: not booked and not starting before `now`.
+export function generateSlots(input: DayInput & { now: Date }): Slot[] {
+  const { now, ...day } = input;
+  const nowMs = now.getTime();
+  return generateDaySlots(day)
+    .filter((s) => !s.booked && s.startAt.getTime() >= nowMs)
+    .map(({ startAt, endAt }) => ({ startAt, endAt }));
 }

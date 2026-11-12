@@ -38,6 +38,12 @@ async function book(date: string, hhmm: string, who = customer, now?: Date) {
   return createBooking({ customerId: who.id, serviceId, startAt: at(date, hhmm), now });
 }
 
+// Local times of the slots a customer can still book on a date (booked slots are returned but flagged).
+async function freeTimes(date: string): Promise<string[]> {
+  const { slots } = await getAvailableSlots(serviceId, date);
+  return slots.filter((s) => !s.booked).map((s) => s.localTime);
+}
+
 async function expectHttpError(promise: Promise<unknown>, status: number) {
   const err = await promise.then(
     () => null,
@@ -98,6 +104,7 @@ describe("getAvailableSlots", () => {
     expect(times[0]).toBe("09:00");
     expect(times.at(-1)).toBe("11:00");
     expect(times).toHaveLength(9);
+    expect(result.slots.every((s) => s.booked === false)).toBe(true);
     expect(result.timezone).toBe(TZ);
   });
 
@@ -123,7 +130,7 @@ describe("createBooking", () => {
   it("removes overlapping slots including the buffer, then allows the first slot after it", async () => {
     await book(DATES.buffer, "09:00"); // occupies 09:00-10:10 with the 10-minute buffer
 
-    const times = (await getAvailableSlots(serviceId, DATES.buffer)).slots.map((s) => s.localTime);
+    const times = await freeTimes(DATES.buffer);
     expect(times).not.toContain("09:00");
     expect(times).not.toContain("09:15");
     expect(times).not.toContain("10:00"); // would overlap the buffer
@@ -150,8 +157,9 @@ describe("createBooking", () => {
     const booking = await book(DATES.dst, "09:00");
     expect(booking.startAt.toISOString()).toBe("2031-03-09T13:00:00.000Z");
 
-    const slot = (await getAvailableSlots(serviceId, DATES.dst)).slots[0];
-    expect(slot.localTime).toBe("10:15"); // 09:00 is taken; the next free start is after the 10-minute buffer
+    const slot = (await getAvailableSlots(serviceId, DATES.dst)).slots.find((s) => !s.booked);
+    expect(slot?.localTime).toBe("10:15"); // 09:00 is taken; the next free start is after the 10-minute buffer
+    expect((await getAvailableSlots(serviceId, DATES.dst)).slots[0]).toMatchObject({ localTime: "09:00", booked: true });
   });
 
   it("rejects every slot on a closed override day", async () => {
@@ -174,7 +182,7 @@ describe("createBooking", () => {
       },
     });
 
-    const times = (await getAvailableSlots(serviceId, DATES.overrideHours)).slots.map((s) => s.localTime);
+    const times = await freeTimes(DATES.overrideHours);
     expect(times).toEqual(["10:00"]); // a 60-minute service only fits once in a 10:00-11:00 window
     await expectHttpError(book(DATES.overrideHours, "09:00"), 409);
     await expect(book(DATES.overrideHours, "10:00")).resolves.toBeTruthy();
@@ -214,14 +222,14 @@ describe("createBooking", () => {
 describe("cancelBooking", () => {
   it("lets the customer cancel, sets CANCELLED, and frees the slot", async () => {
     const booking = await book(DATES.cancelCustomer, "09:00");
-    const before = (await getAvailableSlots(serviceId, DATES.cancelCustomer)).slots.map((s) => s.localTime);
+    const before = await freeTimes(DATES.cancelCustomer);
     expect(before).not.toContain("09:00");
 
     const cancelled = await cancelBooking(booking.id, sessionUser(customer, Role.CUSTOMER));
     expect(cancelled.status).toBe(BookingStatus.CANCELLED);
     expect(cancelled.cancelledAt).toBeInstanceOf(Date);
 
-    const after = (await getAvailableSlots(serviceId, DATES.cancelCustomer)).slots.map((s) => s.localTime);
+    const after = await freeTimes(DATES.cancelCustomer);
     expect(after).toContain("09:00");
     await expect(book(DATES.cancelCustomer, "09:00")).resolves.toBeTruthy();
   });

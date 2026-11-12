@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import {
   addMonths,
   eachDayOfInterval,
@@ -24,6 +25,9 @@ export type BookingCalendarProps = {
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+const navButton =
+  "inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 text-brand-green transition-colors hover:border-brand-gold hover:bg-brand-gold-soft focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold disabled:cursor-not-allowed disabled:border-transparent disabled:text-gray-300 disabled:hover:bg-transparent";
+
 // Month-grid date picker. Works in the browser's local calendar; the API interprets the chosen day in the business timezone.
 export function BookingCalendar({ value, onChange, minDate }: BookingCalendarProps) {
   const floor = startOfDay(minDate ?? new Date());
@@ -43,20 +47,20 @@ export function BookingCalendar({ value, onChange, minDate }: BookingCalendarPro
           onClick={() => setMonth((m) => addMonths(m, -1))}
           disabled={!canGoBack}
           aria-label="Previous month"
-          className="rounded-md px-3 py-1 text-sm hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-transparent"
+          className={navButton}
         >
-          &larr;
+          <ChevronLeft size={18} strokeWidth={2} aria-hidden="true" />
         </button>
-        <p className="text-sm font-semibold" aria-live="polite">
+        <p className="text-sm font-semibold text-brand-green" aria-live="polite">
           {format(month, "MMMM yyyy")}
         </p>
         <button
           type="button"
           onClick={() => setMonth((m) => addMonths(m, 1))}
           aria-label="Next month"
-          className="rounded-md px-3 py-1 text-sm hover:bg-gray-100"
+          className={navButton}
         >
-          &rarr;
+          <ChevronRight size={18} strokeWidth={2} aria-hidden="true" />
         </button>
       </div>
 
@@ -73,6 +77,7 @@ export function BookingCalendar({ value, onChange, minDate }: BookingCalendarPro
           const iso = format(day, "yyyy-MM-dd");
           const disabled = day < floor;
           const selected = value === iso;
+          const today = isToday(day);
           return (
             <button
               key={iso}
@@ -83,11 +88,11 @@ export function BookingCalendar({ value, onChange, minDate }: BookingCalendarPro
               onClick={() => onChange(iso)}
               className={[
                 "flex aspect-square items-center justify-center rounded-md text-sm transition-colors",
-                "focus:outline-none focus-visible:ring-2 focus-visible:ring-black",
+                "focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold",
                 !isSameMonth(day, month) ? "text-gray-300" : "",
-                disabled ? "cursor-not-allowed text-gray-300 line-through" : "hover:bg-gray-100",
-                selected ? "bg-black font-semibold text-white hover:bg-gray-800" : "",
-                !selected && isToday(day) ? "ring-1 ring-gray-400" : "",
+                disabled ? "cursor-not-allowed text-gray-300 line-through" : "hover:bg-brand-gold-soft",
+                selected ? "bg-brand-green font-semibold text-white hover:bg-brand-green-dark" : "",
+                !selected && today ? "font-semibold text-brand-green ring-1 ring-brand-gold" : "",
               ].join(" ")}
             >
               {format(day, "d")}
