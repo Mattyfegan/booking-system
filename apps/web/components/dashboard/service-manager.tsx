@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Eye, EyeOff, Pencil, Plus } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Eye, EyeOff, Pencil, Plus } from "lucide-react";
 import { Alert, Badge, Button, Input, Modal, Textarea } from "@booking/ui";
 import { tableBodyClass, tableCardClass, tableClass, tableHeadClass, tableRowClass, tableScrollClass } from "@/components/table-styles";
 import { centsToDollarsInput, dollarsToCents } from "@/lib/dashboard";
@@ -74,6 +74,56 @@ function buildPayload(values: FormValues): { payload: Record<string, unknown> } 
   };
 }
 
+type ServiceSortKey = "name" | "duration" | "price" | "status";
+type ServiceSort = { key: ServiceSortKey; dir: "asc" | "desc" };
+
+// Services are a short, unpaged list, so sorting happens in the browser. Ties break by name.
+function sortServices(list: ManagedService[], sort: ServiceSort): ManagedService[] {
+  const sign = sort.dir === "asc" ? 1 : -1;
+  const value = (s: ManagedService): number =>
+    sort.key === "duration" ? s.durationMin : sort.key === "price" ? s.priceCents : Number(s.isActive);
+  return [...list].sort((a, b) =>
+    sort.key === "name" ? sign * a.name.localeCompare(b.name) : sign * (value(a) - value(b)) || a.name.localeCompare(b.name),
+  );
+}
+
+function SortHeader({
+  label,
+  sortKey,
+  sort,
+  onSort,
+  align = "left",
+}: {
+  label: string;
+  sortKey: ServiceSortKey;
+  sort: ServiceSort;
+  onSort: (key: ServiceSortKey) => void;
+  align?: "left" | "right";
+}) {
+  const active = sort.key === sortKey;
+  const Icon = !active ? ArrowUpDown : sort.dir === "asc" ? ArrowUp : ArrowDown;
+  return (
+    <th
+      scope="col"
+      aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
+      className={`whitespace-nowrap px-4 py-3 ${align === "right" ? "text-right" : ""}`}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className={[
+          "-mx-1 inline-flex items-center gap-1.5 rounded px-1 transition-colors",
+          "hover:text-brand-green focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold",
+          active ? "text-brand-green" : "",
+        ].join(" ")}
+      >
+        {label}
+        <Icon size={14} aria-hidden="true" className={active ? "" : "opacity-40"} />
+      </button>
+    </th>
+  );
+}
+
 // Services as a table, styled like the bookings tables. Editing happens in a modal; the table is read-only.
 export function ServiceManager({ services }: { services: ManagedService[] }) {
   const router = useRouter();
@@ -83,7 +133,14 @@ export function ServiceManager({ services }: { services: ManagedService[] }) {
   const [formError, setFormError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
+  const [sort, setSort] = useState<ServiceSort>({ key: "name", dir: "asc" });
   const [, startTransition] = useTransition();
+
+  const sorted = useMemo(() => sortServices(services, sort), [services, sort]);
+
+  function onSort(key: ServiceSortKey) {
+    setSort((cur) => (cur.key === key ? { key, dir: cur.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
+  }
 
   function openNew() {
     setEditing("new");
@@ -186,17 +243,17 @@ export function ServiceManager({ services }: { services: ManagedService[] }) {
             <caption className="sr-only">Services</caption>
             <thead className={tableHeadClass}>
               <tr>
-                <th scope="col" className="px-4 py-3">Service</th>
-                <th scope="col" className="whitespace-nowrap px-4 py-3">Duration</th>
-                <th scope="col" className="whitespace-nowrap px-4 py-3 text-right">Price</th>
-                <th scope="col" className="px-4 py-3">Status</th>
+                <SortHeader label="Service" sortKey="name" sort={sort} onSort={onSort} />
+                <SortHeader label="Duration" sortKey="duration" sort={sort} onSort={onSort} />
+                <SortHeader label="Price" sortKey="price" sort={sort} onSort={onSort} align="right" />
+                <SortHeader label="Status" sortKey="status" sort={sort} onSort={onSort} />
                 <th scope="col" className="px-4 py-3 text-right">
                   <span className="sr-only">Actions</span>
                 </th>
               </tr>
             </thead>
             <tbody className={tableBodyClass}>
-              {services.map((s) => (
+              {sorted.map((s) => (
                 <tr key={s.id} className={`${tableRowClass} ${s.isActive ? "" : "text-gray-400"}`}>
                   <td className="px-4 py-3">
                     <div className="flex flex-col gap-0.5">

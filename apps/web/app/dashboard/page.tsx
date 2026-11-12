@@ -15,14 +15,13 @@ import {
 import { CancelBookingButton } from "@/components/dashboard/cancel-booking-button";
 import { ServiceManager, type ManagedService } from "@/components/dashboard/service-manager";
 import { Pagination } from "@/components/pagination";
-import { SortableHead, StaticHeader, type ColumnDef } from "@/components/sort-header";
+import { SortableHead, type ColumnDef } from "@/components/sort-header";
 import { SignOutButton } from "@/components/sign-out-button";
 import { PageShell } from "@/components/skeletons";
 import {
   tableBodyClass,
   tableCardClass,
   tableClass,
-  tableHeadClass,
   tableRowClass,
   tableScrollClass,
 } from "@/components/table-styles";
@@ -64,8 +63,49 @@ const bookingInclude = {
 } as const;
 
 // Both lists share one URL, same as My bookings, so paging or sorting one table keeps the other in place.
-function dashboardHref(upcoming: ListState<BookingSortKey>, history: ListState<BookingSortKey>): string {
-  return buildHref("/dashboard", sectionParams("upcoming", upcoming), sectionParams("history", history));
+function dashboardHref(
+  upcoming: ListState<BookingSortKey>,
+  history: ListState<BookingSortKey>,
+  revenue: ListState<RevenueSortKey>,
+): string {
+  return buildHref(
+    "/dashboard",
+    sectionParams("upcoming", upcoming),
+    sectionParams("history", history),
+    sectionParams("revenue", revenue),
+  );
+}
+
+// Revenue rows are sorted in place (there are only a few services), by the same URL-driven rules.
+const REVENUE_KEYS = ["service", "price", "past", "revenue", "upcoming", "booked"] as const;
+type RevenueSortKey = (typeof REVENUE_KEYS)[number];
+
+const REVENUE_COLUMNS: ColumnDef<RevenueSortKey>[] = [
+  { label: "Service", key: "service" },
+  { label: "Price", key: "price", align: "right" },
+  { label: "Past", key: "past", align: "right" },
+  { label: "Revenue", key: "revenue", align: "right" },
+  { label: "Upcoming", key: "upcoming", align: "right" },
+  { label: "Booked value", key: "booked", align: "right" },
+];
+
+type ServiceStatRow = ReturnType<typeof summarizeServices>["rows"][number];
+
+const REVENUE_VALUE: Record<Exclude<RevenueSortKey, "service">, (r: ServiceStatRow) => number> = {
+  price: (r) => r.priceCents,
+  past: (r) => r.pastCount,
+  revenue: (r) => r.pastRevenueCents,
+  upcoming: (r) => r.upcomingCount,
+  booked: (r) => r.upcomingRevenueCents,
+};
+
+function sortRevenue(rows: ServiceStatRow[], state: ListState<RevenueSortKey>): ServiceStatRow[] {
+  const sign = state.dir === "asc" ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    if (state.sort === "service") return sign * a.name.localeCompare(b.name);
+    const value = REVENUE_VALUE[state.sort];
+    return sign * (value(a) - value(b)) || a.name.localeCompare(b.name);
+  });
 }
 
 function orderFor(state: ListState<BookingSortKey>): Prisma.BookingOrderByWithRelationInput[] {
@@ -120,6 +160,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
   ]);
 
   const upcoming = clampPage(parseListState(searchParams, "upcoming", SORT_KEYS, DEFAULTS.upcoming), upcomingTotal);
+  const revenue = parseListState(searchParams, "revenue", REVENUE_KEYS, { sort: "service", dir: "asc" });
   const history = clampPage(parseListState(searchParams, "history", SORT_KEYS, DEFAULTS.history), historyTotal);
 
   const [upcomingRows, historyRows] = await Promise.all([
@@ -201,18 +242,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
           <div className={tableScrollClass}>
             <table className={tableClass}>
               <caption className="sr-only">Revenue by service</caption>
-              <thead className={tableHeadClass}>
-                <tr>
-                  <StaticHeader label="Service" />
-                  <StaticHeader label="Price" align="right" />
-                  <StaticHeader label="Past" align="right" />
-                  <StaticHeader label="Revenue" align="right" />
-                  <StaticHeader label="Upcoming" align="right" />
-                  <StaticHeader label="Booked value" align="right" />
-                </tr>
-              </thead>
+              <SortableHead columns={REVENUE_COLUMNS} state={revenue} hrefFor={(next) => dashboardHref(upcoming, history, next)} />
               <tbody className={tableBodyClass}>
-                {serviceStats.map((r) => (
+                {sortRevenue(serviceStats, revenue).map((r) => (
                   <tr key={r.serviceId} className={`${tableRowClass} ${r.isActive ? "" : "text-gray-400"}`}>
                     <td className="px-4 py-3 font-medium text-brand-green">
                       <span className="flex items-center gap-2">
@@ -263,8 +295,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
             timezone={tz}
             nowMs={nowMs}
             withActions
-            hrefFor={(next) => dashboardHref(next, history)}
-            pageHref={(p) => dashboardHref({ ...upcoming, page: p }, history)}
+            hrefFor={(next) => dashboardHref(next, history, revenue)}
+            pageHref={(p) => dashboardHref({ ...upcoming, page: p }, history, revenue)}
           />
         )}
       </section>
@@ -283,8 +315,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
             timezone={tz}
             nowMs={nowMs}
             withActions={false}
-            hrefFor={(next) => dashboardHref(upcoming, next)}
-            pageHref={(p) => dashboardHref(upcoming, { ...history, page: p })}
+            hrefFor={(next) => dashboardHref(upcoming, next, revenue)}
+            pageHref={(p) => dashboardHref(upcoming, { ...history, page: p }, revenue)}
           />
         )}
       </section>
