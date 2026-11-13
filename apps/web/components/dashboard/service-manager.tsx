@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowDown, ArrowUp, ArrowUpDown, Eye, EyeOff, Pencil, Plus } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Eye, EyeOff, Pencil, Plus, Trash2 } from "lucide-react";
 import { Alert, Badge, Button, Input, Modal, Textarea } from "@booking/ui";
 import { tableBodyClass, tableCardClass, tableClass, tableHeadClass, tableRowClass, tableScrollClass } from "@/components/table-styles";
 import { centsToDollarsInput, dollarsToCents } from "@/lib/dashboard";
@@ -133,6 +133,9 @@ export function ServiceManager({ services }: { services: ManagedService[] }) {
   const [formError, setFormError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
+  const [listNotice, setListNotice] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<ManagedService | null>(null);
+  const [deletePending, setDeletePending] = useState(false);
   const [sort, setSort] = useState<ServiceSort>({ key: "name", dir: "asc" });
   const [, startTransition] = useTransition();
 
@@ -203,6 +206,34 @@ export function ServiceManager({ services }: { services: ManagedService[] }) {
     }
   }
 
+  // Hard-deletes a service with no bookings. The API deactivates it instead when it has booking history.
+  async function confirmDelete() {
+    if (!deleting) return;
+    setDeletePending(true);
+    setListError(null);
+    setListNotice(null);
+    try {
+      const res = await fetch(`/api/manage/services/${deleting.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? "Could not delete the service.");
+      }
+      // 200 means the service has bookings and was deactivated; 204 means it was removed.
+      if (res.status === 200) {
+        setListNotice(`${deleting.name} has bookings, so it was deactivated instead of deleted.`);
+      } else {
+        setListNotice(`${deleting.name} was deleted.`);
+      }
+      setDeleting(null);
+      refresh();
+    } catch (err) {
+      setListError(err instanceof Error ? err.message : "Could not delete the service.");
+      setDeleting(null);
+    } finally {
+      setDeletePending(false);
+    }
+  }
+
   async function toggleActive(service: ManagedService) {
     setListError(null);
     try {
@@ -227,7 +258,7 @@ export function ServiceManager({ services }: { services: ManagedService[] }) {
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-gray-600">
-          Deactivated services are hidden from customers. Services with past bookings cannot be deleted.
+          Deactivated services are hidden from customers. Services with bookings are deactivated rather than deleted.
         </p>
         <Button type="button" variant="brand" size="sm" onClick={openNew} className="gap-1.5">
           <Plus size={16} aria-hidden="true" />
@@ -236,6 +267,7 @@ export function ServiceManager({ services }: { services: ManagedService[] }) {
       </div>
 
       {listError && <Alert tone="error">{listError}</Alert>}
+      {listNotice && <Alert tone="info">{listNotice}</Alert>}
 
       <div className={tableCardClass}>
         <div className={tableScrollClass}>
@@ -294,6 +326,17 @@ export function ServiceManager({ services }: { services: ManagedService[] }) {
                         {s.isActive ? <EyeOff size={14} aria-hidden="true" /> : <Eye size={14} aria-hidden="true" />}
                         {s.isActive ? "Deactivate" : "Activate"}
                       </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setDeleting(s)}
+                        aria-label={`Delete ${s.name}`}
+                        className="gap-1.5 text-red-700"
+                      >
+                        <Trash2 size={14} aria-hidden="true" />
+                        Delete
+                      </Button>
                     </div>
                   </td>
                 </tr>
@@ -311,10 +354,35 @@ export function ServiceManager({ services }: { services: ManagedService[] }) {
       </div>
 
       <Modal
+        open={deleting !== null}
+        onClose={() => !deletePending && setDeleting(null)}
+        title={deleting ? `Delete ${deleting.name}?` : "Delete service?"}
+        description="Services with bookings are deactivated instead, so existing bookings keep their service."
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full sm:w-auto"
+              onClick={() => setDeleting(null)}
+              disabled={deletePending}
+            >
+              Keep service
+            </Button>
+            <Button type="button" variant="danger" className="w-full sm:w-auto" onClick={confirmDelete} disabled={deletePending}>
+              {deletePending ? "Deleting..." : "Yes, delete"}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-gray-600">Deleting a service that has no bookings cannot be undone.</p>
+      </Modal>
+
+      <Modal
         open={editing !== null}
         onClose={close}
         title={isNew ? "Add service" : "Edit service"}
-        description="Prices are in USD. The buffer is blocked after each appointment."
+        description="Prices are in NZD. The buffer is blocked after each appointment."
         footer={
           <>
             <Button type="button" variant="secondary" className="w-full sm:w-auto" onClick={close} disabled={pending}>
@@ -362,7 +430,7 @@ export function ServiceManager({ services }: { services: ManagedService[] }) {
               onChange={(e) => setValues((v) => ({ ...v, durationMin: e.target.value }))}
             />
             <Input
-              label="Price (USD)"
+              label="Price (NZD)"
               inputMode="decimal"
               value={values.price}
               error={fieldErrors.price}

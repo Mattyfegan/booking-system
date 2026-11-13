@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
+import Link from "next/link";
+import { formatInTimeZone } from "date-fns-tz";
 import { BookingStatus, prisma, type Prisma } from "@booking/db";
-import { Badge, Card, EmptyState } from "@booking/ui";
+import { Badge, Button, Card, EmptyState } from "@booking/ui";
 import {
   Banknote,
   CalendarClock,
+  CalendarDays,
   History,
   LayoutDashboard,
   Scissors,
@@ -12,6 +14,8 @@ import {
   Wallet,
   type LucideIcon,
 } from "lucide-react";
+import { AvailabilityEditor, type ManagedOverride, type ManagedRule } from "@/components/dashboard/availability-editor";
+import { BookingOutcomeButtons } from "@/components/dashboard/booking-outcome-buttons";
 import { CancelBookingButton } from "@/components/dashboard/cancel-booking-button";
 import { ServiceManager, type ManagedService } from "@/components/dashboard/service-manager";
 import { Pagination } from "@/components/pagination";
@@ -26,13 +30,23 @@ import {
   tableScrollClass,
 } from "@/components/table-styles";
 import { getBusiness } from "@/lib/business";
-import { summarizeServices, toCountMap } from "@/lib/dashboard";
+import {
+  bookingFilterWhere,
+  dayRange,
+  EMPTY_BOOKING_FILTERS,
+  BOOKING_STATUS_FILTERS,
+  parseBookingFilters,
+  summarizeServices,
+  toCountMap,
+  type BookingFilters,
+  type BookingStatusFilter,
+} from "@/lib/dashboard";
 import { formatDayInZone, formatPrice, formatTimeInZone } from "@/lib/format";
-import { getSessionUser } from "@/lib/session";
 import {
   PAGE_SIZE,
   buildHref,
   clampPage,
+  firstParam,
   parseListState,
   sectionParams,
   type ListState,
@@ -57,22 +71,45 @@ const STATUS_BADGE: Record<BookingStatus, { label: string; tone: "neutral" | "su
   NO_SHOW: { label: "No show", tone: "warning" },
 };
 
+const STATUS_FILTER_LABEL: Record<BookingStatusFilter, string> = {
+  ALL: "All statuses",
+  CONFIRMED: "Confirmed",
+  CANCELLED: "Cancelled",
+  COMPLETED: "Completed",
+  NO_SHOW: "No show",
+};
+
 const bookingInclude = {
   service: { select: { name: true } },
   customer: { select: { name: true, email: true } },
 } as const;
 
-// Both lists share one URL, same as My bookings, so paging or sorting one table keeps the other in place.
-function dashboardHref(
-  upcoming: ListState<BookingSortKey>,
-  history: ListState<BookingSortKey>,
-  revenue: ListState<RevenueSortKey>,
-): string {
+// Everything the dashboard reads from the URL. Each section keeps its own paging and sorting, and every
+// link carries the full state so moving through one table does not reset the others.
+type DashboardState = {
+  upcoming: ListState<BookingSortKey>;
+  history: ListState<BookingSortKey>;
+  revenue: ListState<RevenueSortKey>;
+  filters: BookingFilters;
+};
+
+function filterParams(f: BookingFilters): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (f.status !== "ALL") out.status = f.status;
+  if (f.serviceId) out.service = f.serviceId;
+  if (f.from) out.from = f.from;
+  if (f.to) out.to = f.to;
+  return out;
+}
+
+function hrefFor(base: DashboardState, patch: Partial<DashboardState> = {}): string {
+  const s = { ...base, ...patch };
   return buildHref(
     "/dashboard",
-    sectionParams("upcoming", upcoming),
-    sectionParams("history", history),
-    sectionParams("revenue", revenue),
+    sectionParams("upcoming", s.upcoming),
+    sectionParams("history", s.history),
+    sectionParams("revenue", s.revenue),
+    filterParams(s.filters),
   );
 }
 
@@ -128,40 +165,62 @@ function orderFor(state: ListState<BookingSortKey>): Prisma.BookingOrderByWithRe
   return [primary, { id: "asc" }];
 }
 
-// Owner/admin overview: stats, revenue by service, services, and the upcoming and past booking lists.
+// Owner/admin overview. Access is enforced by app/dashboard/layout.tsx.
 export default async function DashboardPage({ searchParams }: { searchParams: SearchParams }) {
-  const user = await getSessionUser();
-  if (!user) redirect("/sign-in?callbackUrl=/dashboard");
-  if (user.role === "CUSTOMER") redirect("/");
-
   const now = new Date();
+  const business = await getBusiness();
+  const tz = business.timezone;
+  const today = formatInTimeZone(now, tz, "yyyy-MM-dd");
+  const todayRange = dayRange(today, tz);
+
+  const filters = parseBookingFilters({
+    status: firstParam(searchParams.status),
+    service: firstParam(searchParams.service),
+    from: firstParam(searchParams.from),
+    to: firstParam(searchParams.to),
+  });
+
   // Upcoming: confirmed and not yet started. History: everything else, including cancelled future bookings.
   const upcomingWhere: Prisma.BookingWhereInput = { status: BookingStatus.CONFIRMED, startAt: { gte: now } };
-  const historyWhere: Prisma.BookingWhereInput = {
+  const historyBase: Prisma.BookingWhereInput = {
     OR: [{ status: { not: BookingStatus.CONFIRMED } }, { startAt: { lt: now } }],
   };
+  const historyWhere: Prisma.BookingWhereInput = { AND: [historyBase, bookingFilterWhere(filters, tz)] };
+  const todayWhere: Prisma.BookingWhereInput = { startAt: { gte: todayRange.gte, lt: todayRange.lt } };
+  const overrideFrom = new Date(`${today}T00:00:00.000Z`);
 
-  const [business, services, upcomingTotal, historyTotal, pastGroups, upcomingGroups] = await Promise.all([
-    getBusiness(),
-    prisma.service.findMany({ orderBy: { createdAt: "asc" } }),
-    prisma.booking.count({ where: upcomingWhere }),
-    prisma.booking.count({ where: historyWhere }),
-    // Past revenue counts bookings that happened: confirmed-but-past or completed. Cancelled and no-shows are excluded.
-    prisma.booking.groupBy({
-      by: ["serviceId"],
-      where: { status: { in: [BookingStatus.CONFIRMED, BookingStatus.COMPLETED] }, startAt: { lt: now } },
-      _count: { _all: true },
+  const [services, rules, overrideRows, todayRows, upcomingTotal, historyTotal, pastGroups, upcomingGroups] =
+    await Promise.all([
+      prisma.service.findMany({ orderBy: { createdAt: "asc" } }),
+      prisma.availabilityRule.findMany({ orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }] }),
+      prisma.availabilityOverride.findMany({ where: { date: { gte: overrideFrom } }, orderBy: { date: "asc" } }),
+      prisma.booking.findMany({ where: todayWhere, include: bookingInclude, orderBy: { startAt: "asc" } }),
+      prisma.booking.count({ where: upcomingWhere }),
+      prisma.booking.count({ where: historyWhere }),
+      // Past revenue counts bookings that happened: confirmed-but-past or completed. Cancelled and no-shows are excluded.
+      prisma.booking.groupBy({
+        by: ["serviceId"],
+        where: { status: { in: [BookingStatus.CONFIRMED, BookingStatus.COMPLETED] }, startAt: { lt: now } },
+        _count: { _all: true },
+      }),
+      prisma.booking.groupBy({
+        by: ["serviceId"],
+        where: { status: BookingStatus.CONFIRMED, startAt: { gte: now } },
+        _count: { _all: true },
+      }),
+    ]);
+
+  const overrideCounts = await Promise.all(
+    overrideRows.map((o) => {
+      const date = o.date.toISOString().slice(0, 10);
+      return prisma.booking.count({ where: { status: BookingStatus.CONFIRMED, ...dayRange(date, tz) } });
     }),
-    prisma.booking.groupBy({
-      by: ["serviceId"],
-      where: { status: BookingStatus.CONFIRMED, startAt: { gte: now } },
-      _count: { _all: true },
-    }),
-  ]);
+  );
 
   const upcoming = clampPage(parseListState(searchParams, "upcoming", SORT_KEYS, DEFAULTS.upcoming), upcomingTotal);
   const revenue = parseListState(searchParams, "revenue", REVENUE_KEYS, { sort: "service", dir: "asc" });
   const history = clampPage(parseListState(searchParams, "history", SORT_KEYS, DEFAULTS.history), historyTotal);
+  const state: DashboardState = { upcoming, history, revenue, filters };
 
   const [upcomingRows, historyRows] = await Promise.all([
     prisma.booking.findMany({
@@ -196,8 +255,24 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
     isActive: s.isActive,
   }));
 
-  const tz = business.timezone;
+  const managedRules: ManagedRule[] = rules.map((r) => ({
+    id: r.id,
+    dayOfWeek: r.dayOfWeek,
+    startTime: r.startTime,
+    endTime: r.endTime,
+  }));
+
+  const managedOverrides: ManagedOverride[] = overrideRows.map((o, i) => ({
+    id: o.id,
+    date: o.date.toISOString().slice(0, 10),
+    isClosed: o.isClosed,
+    startTime: o.startTime,
+    endTime: o.endTime,
+    bookingCount: overrideCounts[i],
+  }));
+
   const nowMs = now.getTime();
+  const filtersActive = filters.status !== "ALL" || filters.serviceId !== "" || filters.from !== "" || filters.to !== "";
 
   return (
     <PageShell>
@@ -211,6 +286,71 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
         </div>
         <SignOutButton />
       </header>
+
+      <section aria-labelledby="today-heading" className="mb-10 flex flex-col gap-3">
+        <SectionHeading
+          id="today-heading"
+          icon={CalendarDays}
+          title={`Today's schedule`}
+          count={todayRows.length}
+        />
+        <p className="text-sm text-gray-600">{formatDayInZone(now, tz)}</p>
+        {todayRows.length === 0 ? (
+          <EmptyState title="No bookings today" description="Bookings for today will appear here, in time order." />
+        ) : (
+          <div className={tableCardClass}>
+            <div className={tableScrollClass}>
+              <table className={tableClass}>
+                <caption className="sr-only">Today&apos;s bookings</caption>
+                <thead className="border-b border-gray-200 bg-brand-gold-soft text-left text-xs font-semibold uppercase tracking-wide text-brand-green">
+                  <tr>
+                    <th scope="col" className="px-4 py-3">
+                      Time
+                    </th>
+                    <th scope="col" className="px-4 py-3">
+                      Service
+                    </th>
+                    <th scope="col" className="px-4 py-3">
+                      Customer
+                    </th>
+                    <th scope="col" className="px-4 py-3">
+                      Status
+                    </th>
+                    <th scope="col" className="px-4 py-3">
+                      <span className="sr-only">Actions</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className={tableBodyClass}>
+                  {todayRows.map((b) => {
+                    const badge = bookingBadge(b.status, b.startAt, nowMs);
+                    return (
+                      <tr key={b.id} className={tableRowClass}>
+                        <td className="whitespace-nowrap px-4 py-3 font-medium text-brand-green">
+                          {formatTimeInZone(b.startAt, tz)}
+                        </td>
+                        <td className="px-4 py-3">{b.service.name}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-col">
+                            <span>{b.customer.name ?? "Customer"}</span>
+                            <span className="text-xs text-gray-500">{b.customer.email}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <Badge tone={badge.tone}>{badge.label}</Badge>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <BookingActions booking={b} timezone={tz} nowMs={nowMs} />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </section>
 
       <section aria-labelledby="stats-heading" className="mb-10 flex flex-col gap-3">
         <SectionHeading id="stats-heading" icon={LayoutDashboard} title="Overview" />
@@ -242,7 +382,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
           <div className={tableScrollClass}>
             <table className={tableClass}>
               <caption className="sr-only">Revenue by service</caption>
-              <SortableHead columns={REVENUE_COLUMNS} state={revenue} hrefFor={(next) => dashboardHref(upcoming, history, next)} />
+              <SortableHead columns={REVENUE_COLUMNS} state={revenue} hrefFor={(next) => hrefFor(state, { revenue: next })} />
               <tbody className={tableBodyClass}>
                 {sortRevenue(serviceStats, revenue).map((r) => (
                   <tr key={r.serviceId} className={`${tableRowClass} ${r.isActive ? "" : "text-gray-400"}`}>
@@ -281,6 +421,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
         <ServiceManager services={managed} />
       </section>
 
+      <section aria-labelledby="availability-heading" className="mb-10 flex flex-col gap-3">
+        <SectionHeading id="availability-heading" icon={CalendarClock} title="Availability" />
+        <AvailabilityEditor rules={managedRules} overrides={managedOverrides} today={today} timezone={tz} />
+      </section>
+
       <section aria-labelledby="upcoming-heading" className="mb-10 flex flex-col gap-3">
         <SectionHeading id="upcoming-heading" icon={CalendarClock} title="Upcoming bookings" count={upcomingTotal} />
         {upcomingTotal === 0 ? (
@@ -294,17 +439,20 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
             rows={upcomingRows}
             timezone={tz}
             nowMs={nowMs}
-            withActions
-            hrefFor={(next) => dashboardHref(next, history, revenue)}
-            pageHref={(p) => dashboardHref({ ...upcoming, page: p }, history, revenue)}
+            hrefFor={(next) => hrefFor(state, { upcoming: next })}
+            pageHref={(p) => hrefFor(state, { upcoming: { ...upcoming, page: p } })}
           />
         )}
       </section>
 
       <section aria-labelledby="history-heading" className="flex flex-col gap-3">
         <SectionHeading id="history-heading" icon={History} title="Booking history" count={historyTotal} />
+        <BookingFilterForm filters={filters} services={managed} state={state} />
         {historyTotal === 0 ? (
-          <EmptyState title="No past bookings yet" />
+          <EmptyState
+            title={filtersActive ? "No bookings match these filters" : "No past bookings yet"}
+            description={filtersActive ? "Try a wider date range or clear the filters." : undefined}
+          />
         ) : (
           <BookingTable
             caption="Booking history"
@@ -314,13 +462,99 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
             rows={historyRows}
             timezone={tz}
             nowMs={nowMs}
-            withActions={false}
-            hrefFor={(next) => dashboardHref(upcoming, next, revenue)}
-            pageHref={(p) => dashboardHref(upcoming, { ...history, page: p }, revenue)}
+            hrefFor={(next) => hrefFor(state, { history: next })}
+            pageHref={(p) => hrefFor(state, { history: { ...history, page: p } })}
           />
         )}
       </section>
     </PageShell>
+  );
+}
+
+// A confirmed booking whose start has passed has happened but was never marked completed.
+function bookingBadge(status: BookingStatus, startAt: Date, nowMs: number) {
+  if (status === BookingStatus.CONFIRMED && startAt.getTime() < nowMs) {
+    return { label: "Past", tone: "neutral" as const };
+  }
+  return STATUS_BADGE[status];
+}
+
+// Plain GET form: submitting it reloads the page with filter params in the URL, so the filters are shareable
+// and work without JavaScript. Other sections' paging and sorting are carried over as hidden inputs.
+function BookingFilterForm({
+  filters,
+  services,
+  state,
+}: {
+  filters: BookingFilters;
+  services: ManagedService[];
+  state: DashboardState;
+}) {
+  const carried = {
+    ...sectionParams("upcoming", state.upcoming),
+    ...sectionParams("revenue", state.revenue),
+  };
+  const clearHref = hrefFor(state, { filters: EMPTY_BOOKING_FILTERS, history: { ...state.history, page: 1 } });
+  const labelClass = "text-sm font-medium text-gray-800";
+  const inputClass =
+    "w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-black focus:outline-none focus:ring-1 focus:ring-black";
+
+  return (
+    <form
+      method="get"
+      action="/dashboard"
+      aria-label="Filter booking history"
+      className="grid gap-3 rounded-lg border border-gray-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-5 lg:items-end"
+    >
+      {Object.entries(carried).map(([name, value]) => (
+        <input key={name} type="hidden" name={name} value={value} />
+      ))}
+      <div className="flex flex-col gap-1">
+        <label htmlFor="filter-status" className={labelClass}>
+          Status
+        </label>
+        <select id="filter-status" name="status" defaultValue={filters.status} className={inputClass}>
+          {BOOKING_STATUS_FILTERS.map((s) => (
+            <option key={s} value={s}>
+              {STATUS_FILTER_LABEL[s]}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="flex flex-col gap-1">
+        <label htmlFor="filter-service" className={labelClass}>
+          Service
+        </label>
+        <select id="filter-service" name="service" defaultValue={filters.serviceId} className={inputClass}>
+          <option value="">All services</option>
+          {services.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="flex flex-col gap-1">
+        <label htmlFor="filter-from" className={labelClass}>
+          From
+        </label>
+        <input id="filter-from" type="date" name="from" defaultValue={filters.from} className={inputClass} />
+      </div>
+      <div className="flex flex-col gap-1">
+        <label htmlFor="filter-to" className={labelClass}>
+          To
+        </label>
+        <input id="filter-to" type="date" name="to" defaultValue={filters.to} className={inputClass} />
+      </div>
+      <div className="flex items-center gap-2">
+        <Button type="submit" variant="brand" size="md">
+          Apply
+        </Button>
+        <Link href={clearHref} className="text-sm font-medium text-brand-green underline-offset-2 hover:underline">
+          Clear
+        </Link>
+      </div>
+    </form>
   );
 }
 
@@ -379,6 +613,19 @@ type DashboardBooking = {
   customer: { name: string | null; email: string };
 };
 
+// What an owner can do with one booking, by its state:
+//  - confirmed and not started: cancel
+//  - confirmed and started: record completed or no-show (it was never marked, so it shows as "Past")
+//  - anything else: nothing, the outcome is final
+function BookingActions({ booking, timezone, nowMs }: { booking: DashboardBooking; timezone: string; nowMs: number }) {
+  if (booking.status !== BookingStatus.CONFIRMED) return null;
+  const summary = `${booking.service.name} for ${booking.customer.name ?? booking.customer.email} on ${formatDayInZone(booking.startAt, timezone)} at ${formatTimeInZone(booking.startAt, timezone)}`;
+  if (booking.startAt.getTime() >= nowMs) {
+    return <CancelBookingButton bookingId={booking.id} summary={summary} />;
+  }
+  return <BookingOutcomeButtons bookingId={booking.id} summary={summary} />;
+}
+
 function BookingTable({
   caption,
   pagerLabel,
@@ -387,7 +634,6 @@ function BookingTable({
   rows,
   timezone,
   nowMs,
-  withActions,
   hrefFor,
   pageHref,
 }: {
@@ -398,7 +644,6 @@ function BookingTable({
   rows: DashboardBooking[];
   timezone: string;
   nowMs: number;
-  withActions: boolean;
   hrefFor: (next: ListState<BookingSortKey>) => string;
   pageHref: (page: number) => string;
 }) {
@@ -407,7 +652,7 @@ function BookingTable({
     { label: "Service", key: "service" },
     { label: "Customer", key: "customer" },
     { label: "Status", key: "status" },
-    ...(withActions ? [{ label: "", key: null }] : []),
+    { label: "", key: null },
   ];
 
   return (
@@ -418,12 +663,7 @@ function BookingTable({
           <SortableHead columns={columns} state={state} hrefFor={hrefFor} />
           <tbody className={tableBodyClass}>
             {rows.map((b) => {
-              // A confirmed booking whose start has passed has happened but was never marked completed.
-              const past = b.startAt.getTime() < nowMs;
-              const badge =
-                b.status === BookingStatus.CONFIRMED && past
-                  ? { label: "Past", tone: "neutral" as const }
-                  : STATUS_BADGE[b.status];
+              const badge = bookingBadge(b.status, b.startAt, nowMs);
               return (
                 <tr key={b.id} className={tableRowClass}>
                   <td className="whitespace-nowrap px-4 py-3">
@@ -439,14 +679,9 @@ function BookingTable({
                   <td className="px-4 py-3">
                     <Badge tone={badge.tone}>{badge.label}</Badge>
                   </td>
-                  {withActions && (
-                    <td className="px-4 py-3 text-right">
-                      <CancelBookingButton
-                        bookingId={b.id}
-                        summary={`${b.service.name} for ${b.customer.name ?? b.customer.email} on ${formatDayInZone(b.startAt, timezone)} at ${formatTimeInZone(b.startAt, timezone)}`}
-                      />
-                    </td>
-                  )}
+                  <td className="px-4 py-3 text-right">
+                    <BookingActions booking={b} timezone={timezone} nowMs={nowMs} />
+                  </td>
                 </tr>
               );
             })}

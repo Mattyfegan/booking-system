@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { centsToDollarsInput, dollarsToCents, summarizeServices, toCountMap } from "../dashboard";
+import {
+  bookingFilterWhere,
+  centsToDollarsInput,
+  dayRange,
+  dollarsToCents,
+  EMPTY_BOOKING_FILTERS,
+  nextDateString,
+  parseBookingFilters,
+  summarizeServices,
+  toCountMap,
+} from "../dashboard";
 
 const services = [
   { id: "cut", name: "Cut", priceCents: 2500, isActive: true },
@@ -55,5 +65,55 @@ describe("price parsing", () => {
   it("formats cents back to a two-decimal input value", () => {
     expect(centsToDollarsInput(2550)).toBe("25.50");
     expect(centsToDollarsInput(0)).toBe("0.00");
+  });
+});
+
+describe("day helpers", () => {
+  it("steps to the next calendar date, across month and year boundaries", () => {
+    expect(nextDateString("2026-01-31")).toBe("2026-02-01");
+    expect(nextDateString("2026-12-31")).toBe("2027-01-01");
+  });
+
+  it("covers one local day in the business timezone", () => {
+    const { gte, lt } = dayRange("2026-06-15", "Australia/Sydney");
+    expect(gte.toISOString()).toBe("2026-06-14T14:00:00.000Z");
+    expect(lt.toISOString()).toBe("2026-06-15T14:00:00.000Z");
+  });
+
+  it("gives a 23-hour range on a spring-forward DST day", () => {
+    const { gte, lt } = dayRange("2026-03-08", "America/New_York");
+    expect((lt.getTime() - gte.getTime()) / 3_600_000).toBe(23);
+  });
+});
+
+describe("booking filters", () => {
+  it("falls back to no filtering for unknown or malformed values", () => {
+    expect(parseBookingFilters({ status: "BOGUS", from: "2026-02-30", to: "nope" })).toEqual(EMPTY_BOOKING_FILTERS);
+  });
+
+  it("swaps a reversed date range", () => {
+    expect(parseBookingFilters({ from: "2026-05-10", to: "2026-05-01" })).toMatchObject({
+      from: "2026-05-01",
+      to: "2026-05-10",
+    });
+  });
+
+  it("builds an empty where-clause when no filter is set", () => {
+    expect(bookingFilterWhere(EMPTY_BOOKING_FILTERS, "UTC")).toEqual({});
+  });
+
+  it("builds status, service and inclusive date-range conditions in the business timezone", () => {
+    const where = bookingFilterWhere(
+      { status: "CANCELLED", serviceId: "cut", from: "2026-06-01", to: "2026-06-01" },
+      "Australia/Sydney",
+    );
+    expect(where).toEqual({
+      status: "CANCELLED",
+      serviceId: "cut",
+      startAt: {
+        gte: new Date("2026-05-31T14:00:00.000Z"),
+        lt: new Date("2026-06-01T14:00:00.000Z"),
+      },
+    });
   });
 });

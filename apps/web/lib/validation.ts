@@ -89,6 +89,11 @@ export const availabilityQuerySchema = z.object({
   date: isoDate,
 });
 
+// Owner/admin outcome for a past booking. Cancellation has its own endpoint.
+export const bookingOutcomeSchema = z.object({
+  status: z.enum(["COMPLETED", "NO_SHOW"]),
+});
+
 export const createBookingSchema = z.object({
   serviceId: z.string().min(1),
   startAt: z.string().datetime({ offset: true, message: "Use an ISO 8601 timestamp" }),

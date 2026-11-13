@@ -25,7 +25,7 @@ This project was built using the Claude Code harness using (**Claude Haiku 5.5 *
 - Weekly opening hours with per-date overrides (holidays, closures)
 - Conflict-safe booking via a row lock on the business settings row (`SELECT ... FOR UPDATE`)
 - Customer booking flow on the home page: service, date, time, confirm, and cancel from My bookings
-- Owner dashboard - business profile and services (management UI is Milestone 5)
+- Owner dashboard - today's schedule, booking history with filters, cancellation, weekly hours with date overrides (block a day or set custom hours), and service management (add, edit, activate, delete)
 - Transactional emails - booking confirmations and 24-hour reminders
 
 ## Milestones
@@ -36,13 +36,13 @@ This project was built using the Claude Code harness using (**Claude Haiku 5.5 *
 - [x] **Milestone 2 - Authentication & business profiles**
   NextAuth.js with credential + Google OAuth, role model (customer / business_owner / admin), and full CRUD for business profiles and services. *Done when:* login/logout works, roles are enforced on API routes, and a seeded business owner can manage their services.
 
-- [ ] **Milestone 3 - Availability & conflict-safe booking**
+- [x] **Milestone 3 - Availability & conflict-safe booking**
   Availability rules engine, slot generation, and the booking transaction with pessimistic locking to prevent double-booking. *Done when:* given a date and service, available slots are returned correctly, and concurrent booking attempts correctly resolve to a single successful booking.
 
-- [ ] **Milestone 4 - Customer-facing UI**
+- [x] **Milestone 4 - Customer-facing UI**
   Business discovery, availability calendar, booking flow, and "my bookings" page with cancellation. *Done when:* a customer can complete a full booking and cancellation journey without touching the database directly.
 
-- [ ] **Milestone 5 - Admin dashboard**
+- [x] **Milestone 5 - Admin dashboard**
   Schedule overview, booking management, availability editor, and service management. *Done when:* a business owner can view today's bookings, block out a day, and edit a service - all without a database client.
 
 - [ ] **Milestone 6 - Email notifications**

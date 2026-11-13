@@ -166,6 +166,31 @@ export async function cancelBooking(bookingId: string, user: SessionUser, now = 
   return prisma.booking.findUniqueOrThrow({ where: { id: bookingId } });
 }
 
+export type BookingOutcome = typeof BookingStatus.COMPLETED | typeof BookingStatus.NO_SHOW;
+
+// Owner/admin records what happened to a booking that has already started. Only confirmed bookings whose start
+// time has passed can be marked, so an upcoming appointment cannot be pre-emptively marked as a no-show.
+export async function setBookingOutcome(bookingId: string, outcome: BookingOutcome, now = new Date()) {
+  const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
+  if (!booking) throw new HttpError(404, "Booking not found");
+
+  if (booking.status !== BookingStatus.CONFIRMED) {
+    throw new HttpError(409, `Booking is already ${booking.status.toLowerCase()}`);
+  }
+  if (booking.startAt.getTime() > now.getTime()) {
+    throw new HttpError(409, "A booking can only be marked completed or no-show after it starts");
+  }
+
+  // Conditional update, same as cancelBooking: a concurrent change makes count 0 instead of overwriting it.
+  const { count } = await prisma.booking.updateMany({
+    where: { id: bookingId, status: BookingStatus.CONFIRMED },
+    data: { status: outcome },
+  });
+  if (count === 0) throw new HttpError(409, "Booking was changed by another request");
+
+  return prisma.booking.findUniqueOrThrow({ where: { id: bookingId } });
+}
+
 // Rejects a weekly rule that overlaps another rule on the same weekday.
 export async function assertNoRuleOverlap(
   dayOfWeek: number,

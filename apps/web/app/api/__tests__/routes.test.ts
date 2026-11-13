@@ -10,6 +10,7 @@ import { POST as cancelRoute } from "../bookings/[id]/cancel/route";
 import { GET as listRules, POST as createRule } from "../manage/availability/rules/route";
 import { PATCH as patchRule } from "../manage/availability/rules/[ruleId]/route";
 import { GET as listServices, POST as createService } from "../manage/services/route";
+import { PATCH as patchBookingOutcome } from "../manage/bookings/[bookingId]/route";
 
 vi.mock("@/lib/session", () => ({ getSessionUser: vi.fn() }));
 
@@ -156,6 +157,57 @@ describe("POST /api/bookings/:id/cancel", () => {
     const ok = await cancelRoute(jsonRequest(`/api/bookings/${booking.id}/cancel`, "POST"), ctx({ id: booking.id }));
     expect(ok.status).toBe(200);
     expect((await ok.json()).booking.status).toBe(BookingStatus.CANCELLED);
+  });
+});
+
+describe("PATCH /api/manage/bookings/:id", () => {
+  const outcome = (id: string, status: string) =>
+    patchBookingOutcome(jsonRequest(`/api/manage/bookings/${id}`, "PATCH", { status }), ctx({ bookingId: id }));
+
+  it("returns 403 for a customer and 400 for an invalid status", async () => {
+    const past = await prisma.booking.create({
+      data: {
+        serviceId,
+        customerId: customer.id,
+        startAt: localToUtc("2020-01-06", "09:00", TZ),
+        endAt: localToUtc("2020-01-06", "09:30", TZ),
+      },
+    });
+
+    asUser(customer, Role.CUSTOMER);
+    expect((await outcome(past.id, "COMPLETED")).status).toBe(403);
+
+    asUser(owner, Role.BUSINESS_OWNER);
+    expect((await outcome(past.id, "CANCELLED")).status).toBe(400);
+  });
+
+  it("refuses an upcoming booking, then marks a started one exactly once", async () => {
+    asUser(owner, Role.BUSINESS_OWNER);
+    const upcoming = await prisma.booking.create({
+      data: {
+        serviceId,
+        customerId: customer.id,
+        startAt: localToUtc(DATE, "15:00", TZ),
+        endAt: localToUtc(DATE, "15:30", TZ),
+      },
+    });
+    expect((await outcome(upcoming.id, "NO_SHOW")).status).toBe(409);
+
+    const started = await prisma.booking.create({
+      data: {
+        serviceId,
+        customerId: customer.id,
+        startAt: localToUtc("2020-01-06", "10:00", TZ),
+        endAt: localToUtc("2020-01-06", "10:30", TZ),
+      },
+    });
+    const first = await outcome(started.id, "NO_SHOW");
+    expect(first.status).toBe(200);
+    expect((await first.json()).booking.status).toBe(BookingStatus.NO_SHOW);
+
+    const again = await outcome(started.id, "COMPLETED");
+    expect(again.status).toBe(409);
+    expect((await prisma.booking.findUniqueOrThrow({ where: { id: started.id } })).status).toBe(BookingStatus.NO_SHOW);
   });
 });
 
