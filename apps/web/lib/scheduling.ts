@@ -3,6 +3,7 @@ import { formatInTimeZone } from "date-fns-tz";
 import { BookingStatus, prisma, type Prisma } from "@booking/db";
 import { HttpError, type SessionUser, MANAGER_ROLES } from "./authz";
 import { getBusiness } from "./business";
+import { needsReminder } from "./reminders";
 import {
   generateDaySlots,
   localToUtc,
@@ -132,6 +133,8 @@ export async function createBooking(input: CreateBookingInput) {
           endAt: addMinutes(input.startAt, service.durationMin),
           notes: input.notes ?? null,
           status: BookingStatus.CONFIRMED,
+          // Booked inside the reminder window: mark as handled so the cron job does not send a second email.
+          reminderSentAt: needsReminder(input.startAt, now) ? null : now,
         },
       });
     },

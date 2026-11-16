@@ -7,6 +7,10 @@ export const envSchema = z.object({
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
   RESEND_API_KEY: z.string().optional(),
+  // Sender for transactional email. Without RESEND_API_KEY, emails are logged instead of sent.
+  EMAIL_FROM: z.string().optional(),
+  // Bearer token required by the cron reminder endpoint. Without it the endpoint refuses every request.
+  CRON_SECRET: z.string().optional(),
   NEXT_PUBLIC_APP_URL: z.string().url().optional(),
 });
 

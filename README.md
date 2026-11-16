@@ -45,7 +45,7 @@ This project was built using the Claude Code harness using (**Claude Haiku 5.5 *
 - [x] **Milestone 5 - Admin dashboard**
   Schedule overview, booking management, availability editor, and service management. *Done when:* a business owner can view today's bookings, block out a day, and edit a service - all without a database client.
 
-- [ ] **Milestone 6 - Email notifications**
+- [x] **Milestone 6 - Email notifications**
   Confirmation and cancellation emails via Resend, plus a cron-triggered 24-hour reminder. *Done when:* a completed booking triggers a confirmation email to both customer and business owner, and reminders are queued correctly.
 
 - [ ] **Milestone 7 - Hardening & polish**
@@ -85,6 +85,13 @@ cd packages/db && DATABASE_URL="postgresql://postgres:postgres@localhost:5433/bo
 `TEST_DATABASE_URL` in `.env` makes `pnpm test` use that database instead of the live one.
 
 Open [http://localhost:3000](http://localhost:3000) and [http://localhost:3000/api/health](http://localhost:3000/api/health).
+
+### Email and reminders
+
+- Confirmation and cancellation emails go to the customer and the business owner (the first `BUSINESS_OWNER` account). Sending is best-effort: a mail failure is logged and never fails the booking.
+- Without `RESEND_API_KEY`, emails are logged instead of sent. `EMAIL_FROM` sets the sender.
+- 24-hour reminders are sent by `GET` or `POST /api/cron/reminders`, authorised with `Authorization: Bearer $CRON_SECRET`. Run it hourly from your scheduler. The endpoint returns 503 if `CRON_SECRET` is unset.
+- Each booking gets at most one reminder. Bookings made less than 24 hours before the start time are not reminded, since the confirmation covers them.
 
 ## Project Layout
 
