@@ -6,7 +6,7 @@ import { assertNoRuleOverlap } from "@/lib/scheduling";
 import { getSessionUser } from "@/lib/session";
 import { updateAvailabilityRuleSchema } from "@/lib/validation";
 
-type Ctx = { params: { ruleId: string } };
+type Ctx = { params: Promise<{ ruleId: string }> };
 
 async function loadRule(ruleId: string) {
   const rule = await prisma.availabilityRule.findUnique({ where: { id: ruleId } });
@@ -17,7 +17,8 @@ async function loadRule(ruleId: string) {
 export async function PATCH(req: Request, { params }: Ctx) {
   try {
     assertRole(await getSessionUser(), MANAGER_ROLES);
-    const existing = await loadRule(params.ruleId);
+    const { ruleId } = await params;
+    const existing = await loadRule(ruleId);
     const input = updateAvailabilityRuleSchema.parse(await readJson(req));
 
     const merged = {
@@ -26,9 +27,9 @@ export async function PATCH(req: Request, { params }: Ctx) {
       endTime: input.endTime ?? existing.endTime,
     };
     if (merged.startTime >= merged.endTime) throw new HttpError(400, "endTime must be after startTime");
-    await assertNoRuleOverlap(merged.dayOfWeek, merged, params.ruleId);
+    await assertNoRuleOverlap(merged.dayOfWeek, merged, ruleId);
 
-    const rule = await prisma.availabilityRule.update({ where: { id: params.ruleId }, data: merged });
+    const rule = await prisma.availabilityRule.update({ where: { id: ruleId }, data: merged });
     return NextResponse.json({ rule });
   } catch (err) {
     return errorResponse(err);
@@ -38,8 +39,9 @@ export async function PATCH(req: Request, { params }: Ctx) {
 export async function DELETE(_req: Request, { params }: Ctx) {
   try {
     assertRole(await getSessionUser(), MANAGER_ROLES);
-    await loadRule(params.ruleId);
-    await prisma.availabilityRule.delete({ where: { id: params.ruleId } });
+    const { ruleId } = await params;
+    await loadRule(ruleId);
+    await prisma.availabilityRule.delete({ where: { id: ruleId } });
     return new NextResponse(null, { status: 204 });
   } catch (err) {
     return errorResponse(err);

@@ -5,7 +5,7 @@ import { errorResponse, readJson } from "@/lib/http";
 import { getSessionUser } from "@/lib/session";
 import { updateServiceSchema } from "@/lib/validation";
 
-type Ctx = { params: { serviceId: string } };
+type Ctx = { params: Promise<{ serviceId: string }> };
 
 async function loadService(serviceId: string) {
   const service = await prisma.service.findUnique({ where: { id: serviceId } });
@@ -16,7 +16,8 @@ async function loadService(serviceId: string) {
 export async function GET(_req: Request, { params }: Ctx) {
   try {
     assertRole(await getSessionUser(), MANAGER_ROLES);
-    return NextResponse.json({ service: await loadService(params.serviceId) });
+    const { serviceId } = await params;
+    return NextResponse.json({ service: await loadService(serviceId) });
   } catch (err) {
     return errorResponse(err);
   }
@@ -25,11 +26,12 @@ export async function GET(_req: Request, { params }: Ctx) {
 export async function PATCH(req: Request, { params }: Ctx) {
   try {
     assertRole(await getSessionUser(), MANAGER_ROLES);
-    await loadService(params.serviceId);
+    const { serviceId } = await params;
+    await loadService(serviceId);
     const input = updateServiceSchema.parse(await readJson(req));
 
     const service = await prisma.service.update({
-      where: { id: params.serviceId },
+      where: { id: serviceId },
       data: {
         ...(input.name !== undefined && { name: input.name }),
         ...(input.description !== undefined && { description: input.description ?? null }),
@@ -50,18 +52,19 @@ export async function PATCH(req: Request, { params }: Ctx) {
 export async function DELETE(_req: Request, { params }: Ctx) {
   try {
     assertRole(await getSessionUser(), MANAGER_ROLES);
-    await loadService(params.serviceId);
+    const { serviceId } = await params;
+    await loadService(serviceId);
 
-    const bookingCount = await prisma.booking.count({ where: { serviceId: params.serviceId } });
+    const bookingCount = await prisma.booking.count({ where: { serviceId } });
     if (bookingCount > 0) {
       const service = await prisma.service.update({
-        where: { id: params.serviceId },
+        where: { id: serviceId },
         data: { isActive: false },
       });
       return NextResponse.json({ service, deleted: false, reason: "Service has bookings and was deactivated" });
     }
 
-    await prisma.service.delete({ where: { id: params.serviceId } });
+    await prisma.service.delete({ where: { id: serviceId } });
     return new NextResponse(null, { status: 204 });
   } catch (err) {
     return errorResponse(err);

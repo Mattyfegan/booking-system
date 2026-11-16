@@ -73,7 +73,8 @@ function orderFor(state: ListState<SortKey>): Prisma.BookingOrderByWithRelationI
   return [primary, { id: "asc" }];
 }
 
-export default async function MyBookingsPage({ searchParams }: { searchParams: SearchParams }) {
+export default async function MyBookingsPage({ searchParams: searchParamsPromise }: { searchParams: Promise<SearchParams> }) {
+  const searchParams = await searchParamsPromise;
   const user = await getSessionUser();
   if (!user) redirect("/sign-in?callbackUrl=/my-bookings");
   if (user.role === "BUSINESS_OWNER") redirect("/dashboard");

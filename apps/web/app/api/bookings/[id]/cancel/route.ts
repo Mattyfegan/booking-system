@@ -5,14 +5,15 @@ import { notifyBookingCancelled } from "@/lib/notifications";
 import { cancelBooking } from "@/lib/scheduling";
 import { getSessionUser } from "@/lib/session";
 
-type Ctx = { params: { id: string } };
+type Ctx = { params: Promise<{ id: string }> };
 
 // POST /api/bookings/:id/cancel: sets status to CANCELLED. Customer, business owner, or ADMIN only.
 export async function POST(_req: Request, { params }: Ctx) {
   try {
     const user = assertRole(await getSessionUser(), ["CUSTOMER", "BUSINESS_OWNER", "ADMIN"]);
-    if (!params.id) throw new HttpError(400, "Booking id is required");
-    const booking = await cancelBooking(params.id, user);
+    const { id } = await params;
+    if (!id) throw new HttpError(400, "Booking id is required");
+    const booking = await cancelBooking(id, user);
     // Best-effort, as with confirmations: never fails the cancellation.
     await notifyBookingCancelled(booking.id);
     return NextResponse.json({ booking });

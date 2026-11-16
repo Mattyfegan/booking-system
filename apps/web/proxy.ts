@@ -5,7 +5,7 @@ import { getToken } from "next-auth/jwt";
 // is defence in depth and keeps unauthenticated traffic away from protected pages and APIs.
 const MANAGER_ROLES = ["BUSINESS_OWNER", "ADMIN"];
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
   const isApi = req.nextUrl.pathname.startsWith("/api/");
 

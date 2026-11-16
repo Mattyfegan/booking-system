@@ -166,7 +166,8 @@ function orderFor(state: ListState<BookingSortKey>): Prisma.BookingOrderByWithRe
 }
 
 // Owner/admin overview. Access is enforced by app/dashboard/layout.tsx.
-export default async function DashboardPage({ searchParams }: { searchParams: SearchParams }) {
+export default async function DashboardPage({ searchParams: searchParamsPromise }: { searchParams: Promise<SearchParams> }) {
+  const searchParams = await searchParamsPromise;
   const now = new Date();
   const business = await getBusiness();
   const tz = business.timezone;

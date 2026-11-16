@@ -13,14 +13,15 @@ export const metadata: Metadata = { title: "Booking confirmed" };
 export const dynamic = "force-dynamic";
 
 // Success state shown after a booking is created. Only the customer who made the booking can view it.
-export default async function BookingConfirmedPage({ params }: { params: { id: string } }) {
+export default async function BookingConfirmedPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const user = await getSessionUser();
-  if (!user) redirect(`/sign-in?callbackUrl=${encodeURIComponent(`/booking-confirmed/${params.id}`)}`);
+  if (!user) redirect(`/sign-in?callbackUrl=${encodeURIComponent(`/booking-confirmed/${id}`)}`);
 
   const [business, booking] = await Promise.all([
     getBusiness(),
     prisma.booking.findFirst({
-      where: { id: params.id, customerId: user.id },
+      where: { id, customerId: user.id },
       include: { service: { select: { name: true, durationMin: true, priceCents: true } } },
     }),
   ]);

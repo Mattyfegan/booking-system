@@ -10,7 +10,7 @@ This project was built using the Claude Code harness using (**Claude Haiku 5.5 *
 
 ## Tech Stack
 
-- **Next.js 14** - App Router + Server Actions
+- **Next.js 16** + **React 19** - App Router + Server Actions (Turbopack, `proxy.ts` for the auth gate)
 - **Prisma 5** + **PostgreSQL** - relational data layer with typed queries and transactions
 - **NextAuth.js** - authentication with credential and OAuth (Google) providers
 - **Tailwind CSS** - utility-first styling
@@ -52,6 +52,8 @@ This project was built using the Claude Code harness using (**Claude Haiku 5.5 *
   End-to-end tests (Playwright), rate limiting, timezone edge-case handling, query optimisation, and empty/error states throughout the UI. *Done when:* `pnpm test`, `pnpm lint`, and `pnpm build` all pass cleanly.
 
 ## Getting Started
+
+Requires Node.js 20.9 or newer and pnpm 9.
 
 ```bash
 # Install dependencies
@@ -109,7 +111,7 @@ packages/config  → Environment validation (Zod)
 | `pnpm dev`       | Start the dev server                         |
 | `pnpm build`     | Production build                             |
 | `pnpm test`      | Run tests                                    |
-| `pnpm lint`      | Lint & format (Biome)                        |
+| `pnpm lint`      | ESLint for `apps/web`, TypeScript checks for packages |
 | `pnpm db:migrate`| Run Prisma migrations against local Postgres |
 | `pnpm db:generate` | Regenerate the Prisma client               |
 | `pnpm db:seed`   | Seed the database with test data             |
