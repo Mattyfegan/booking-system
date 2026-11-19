@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { Alert, Button, Input } from "@booking/ui";
 
@@ -8,6 +9,7 @@ import { Alert, Button, Input } from "@booking/ui";
 export function SignUpForm() {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const router = useRouter();
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -35,7 +37,9 @@ export function SignUpForm() {
       setError("Account created, but sign-in failed. Try signing in.");
       return;
     }
-    window.location.assign("/");
+    // Refresh so the server-rendered navbar picks up the new session.
+    router.push("/");
+    router.refresh();
   }
 
   return (

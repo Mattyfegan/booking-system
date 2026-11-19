@@ -25,7 +25,8 @@ export type BookingPanelProps = {
   signInHref: string;
 };
 
-type SlotsState = { status: "idle" | "loading" | "error" | "ready"; slots: SlotItem[] };
+// Tagged with the request key it answers, so a stale response can never be shown for a newer selection.
+type SlotsState = { key: string; status: "error" | "ready"; slots: SlotItem[] };
 
 // Service -> date -> time -> review -> confirm.
 // A successful booking redirects to /booking-confirmed/[id] so the confirmation is on screen after the
@@ -36,7 +37,7 @@ export function BookingPanel({ business, services, access, signInHref }: Booking
   const router = useRouter();
   const [serviceId, setServiceId] = useState<string>(services[0]?.id ?? "");
   const [date, setDate] = useState<string | null>(null);
-  const [slotsState, setSlotsState] = useState<SlotsState>({ status: "idle", slots: [] });
+  const [slotsState, setSlotsState] = useState<SlotsState>({ key: "", status: "ready", slots: [] });
   const [reloadKey, setReloadKey] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   const [selectedStart, setSelectedStart] = useState<string | null>(null);
@@ -52,30 +53,44 @@ export function BookingPanel({ business, services, access, signInHref }: Booking
     return () => clearInterval(id);
   }, []);
 
+  // The slot request this render is waiting on. Until a response for this key arrives, the picker shows loading.
+  const requestKey = date ? `${serviceId}|${date}|${reloadKey}` : null;
+  const slotsReady = requestKey !== null && slotsState.key === requestKey;
+  const slotsStatus = !date ? "idle" : slotsReady ? slotsState.status : "loading";
+  const slots = slotsReady ? slotsState.slots : [];
+
   const service = services.find((s) => s.id === serviceId) ?? null;
-  const selectedSlot = slotsState.slots.find((s) => s.startAt === selectedStart) ?? null;
+  const selectedSlot = slots.find((s) => s.startAt === selectedStart) ?? null;
   const selectedIsBookable = !!selectedSlot && !selectedSlot.booked && new Date(selectedSlot.startAt).getTime() > now;
 
   useEffect(() => {
-    if (!serviceId || !date) return;
+    if (!requestKey || !serviceId || !date) return;
     const controller = new AbortController();
-    setSlotsState({ status: "loading", slots: [] });
-    setSelectedStart(null);
-
     const params = new URLSearchParams({ serviceId, date });
     fetch(`/api/availability?${params.toString()}`, { signal: controller.signal, cache: "no-store" })
       .then(async (res) => {
         if (!res.ok) throw new Error(`Availability request failed (${res.status})`);
         const body = (await res.json()) as { slots: SlotItem[] };
         setNow(Date.now());
-        setSlotsState({ status: "ready", slots: body.slots });
+        setSlotsState({ key: requestKey, status: "ready", slots: body.slots });
       })
       .catch(() => {
-        if (!controller.signal.aborted) setSlotsState({ status: "error", slots: [] });
+        if (!controller.signal.aborted) setSlotsState({ key: requestKey, status: "error", slots: [] });
       });
 
     return () => controller.abort();
-  }, [serviceId, date, reloadKey]);
+  }, [requestKey, serviceId, date]);
+
+  // Changing the service or date discards the previous time selection.
+  function chooseService(id: string) {
+    setServiceId(id);
+    setSelectedStart(null);
+  }
+
+  function chooseDate(next: string | null) {
+    setDate(next);
+    setSelectedStart(null);
+  }
 
   function openReview() {
     if (!selectedSlot) return;
@@ -137,7 +152,7 @@ export function BookingPanel({ business, services, access, signInHref }: Booking
                 <button
                   type="button"
                   aria-pressed={active}
-                  onClick={() => setServiceId(s.id)}
+                  onClick={() => chooseService(s.id)}
                   className={[
                     "flex h-full w-full flex-col gap-1 rounded-lg border bg-white p-4 text-left transition-colors",
                     "focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold",
@@ -168,7 +183,7 @@ export function BookingPanel({ business, services, access, signInHref }: Booking
             <h2 id="date-heading" className="text-lg font-semibold text-brand-green">
               2. Pick a date
             </h2>
-            <BookingCalendar value={date} onChange={setDate} />
+            <BookingCalendar value={date} onChange={chooseDate} />
           </Card>
         </section>
 
@@ -181,8 +196,8 @@ export function BookingPanel({ business, services, access, signInHref }: Booking
               <p className="text-xs text-gray-500">Times are shown in {business.timezone}.</p>
             </div>
             <SlotPicker
-              status={date ? slotsState.status : "idle"}
-              slots={slotsState.slots}
+              status={slotsStatus}
+              slots={slots}
               timezone={business.timezone}
               now={now}
               selected={selectedStart}

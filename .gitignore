@@ -17,6 +17,12 @@ packages/db/generated
 # turbo
 .turbo
 
+# playwright
+test-results
+playwright-report
+blob-report
+playwright/.cache
+
 # os
 .DS_Store
 Thumbs.db

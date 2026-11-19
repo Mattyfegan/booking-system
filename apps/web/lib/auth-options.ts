@@ -6,6 +6,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@booking/db";
 import { env, googleOAuthEnabled } from "./env";
+import { consumeRateLimit, RATE_LIMITS } from "./rate-limit";
 
 const credentialsSchema = z.object({
   email: z.string().email(),
@@ -31,6 +32,10 @@ export const authOptions: NextAuthOptions = {
       async authorize(credentials) {
         const parsed = credentialsSchema.safeParse(credentials);
         if (!parsed.success) return null;
+
+        // Every attempt counts, valid or not. Over the limit, the sign-in fails like a wrong password.
+        const email = parsed.data.email.toLowerCase();
+        if (consumeRateLimit(`signin:${email}`, RATE_LIMITS.signIn) > 0) return null;
 
         const user = await prisma.user.findUnique({
           where: { email: parsed.data.email.toLowerCase() },

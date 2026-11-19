@@ -27,6 +27,9 @@ This project was built using the Claude Code harness using (**Claude Haiku 5.5 *
 - Customer booking flow on the home page: service, date, time, confirm, and cancel from My bookings
 - Owner dashboard - today's schedule, booking history with filters, cancellation, weekly hours with date overrides (block a day or set custom hours), and service management (add, edit, activate, delete)
 - Transactional emails - booking confirmations and 24-hour reminders
+- Rate limits (in-memory, per process) on sign-up, sign-in attempts per email, booking creation, and public availability lookups (429 when exceeded)
+- Branded error, not-found and global error pages
+- Playwright end-to-end suite covering sign-up, booking, cancellation and error states
 
 ## Milestones
 
@@ -48,7 +51,7 @@ This project was built using the Claude Code harness using (**Claude Haiku 5.5 *
 - [x] **Milestone 6 - Email notifications**
   Confirmation and cancellation emails via Resend, plus a cron-triggered 24-hour reminder. *Done when:* a completed booking triggers a confirmation email to both customer and business owner, and reminders are queued correctly.
 
-- [ ] **Milestone 7 - Hardening & polish**
+- [x] **Milestone 7 - Hardening & polish**
   End-to-end tests (Playwright), rate limiting, timezone edge-case handling, query optimisation, and empty/error states throughout the UI. *Done when:* `pnpm test`, `pnpm lint`, and `pnpm build` all pass cleanly.
 
 ## Getting Started
@@ -86,6 +89,8 @@ cd packages/db && DATABASE_URL="postgresql://postgres:postgres@localhost:5433/bo
 
 `TEST_DATABASE_URL` in `.env` makes `pnpm test` use that database instead of the live one.
 
+End-to-end tests use Playwright (Chromium). Install the browser once with `pnpm --filter @booking/web exec playwright install chromium`, then run `pnpm test:e2e` against the seeded dev database. The suite starts `pnpm dev` itself unless one is already running on port 3000.
+
 Open [http://localhost:3000](http://localhost:3000) and [http://localhost:3000/api/health](http://localhost:3000/api/health).
 
 ### Email and reminders
@@ -110,7 +115,8 @@ packages/config  → Environment validation (Zod)
 | ---------------- | -------------------------------------------- |
 | `pnpm dev`       | Start the dev server                         |
 | `pnpm build`     | Production build                             |
-| `pnpm test`      | Run tests                                    |
+| `pnpm test`      | Run unit and integration tests (Vitest)      |
+| `pnpm test:e2e`  | Run end-to-end tests (Playwright)            |
 | `pnpm lint`      | ESLint for `apps/web`, TypeScript checks for packages |
 | `pnpm db:migrate`| Run Prisma migrations against local Postgres |
 | `pnpm db:generate` | Regenerate the Prisma client               |

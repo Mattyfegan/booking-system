@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { errorResponse } from "@/lib/http";
+import { assertWithinRateLimit, clientIp, RATE_LIMITS } from "@/lib/rate-limit";
 import { getAvailableSlots } from "@/lib/scheduling";
 import { availabilityQuerySchema } from "@/lib/validation";
 
@@ -9,6 +10,7 @@ export const dynamic = "force-dynamic";
 // GET /api/availability?serviceId=&date=YYYY-MM-DD
 export async function GET(req: Request) {
   try {
+    assertWithinRateLimit(`availability:${clientIp(req)}`, RATE_LIMITS.availability);
     const query = availabilityQuerySchema.parse(Object.fromEntries(new URL(req.url).searchParams));
     const result = await getAvailableSlots(query.serviceId, query.date);
     return NextResponse.json(result);

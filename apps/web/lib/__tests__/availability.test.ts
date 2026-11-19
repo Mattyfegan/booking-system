@@ -207,4 +207,23 @@ describe("generateSlots", () => {
     });
     expect(slots.map((s) => iso(s.startAt))).toEqual(["2031-03-09T13:00:00.000Z"]);
   });
+
+  it("does not duplicate or skip slots on the fall-back day (25-hour local day)", () => {
+    // 2031-11-02: clocks go back at 02:00 EDT, so 00:00-04:00 local spans five real hours.
+    const day = generateDaySlots({
+      ...base,
+      date: "2031-11-02",
+      windows: [{ startTime: "00:00", endTime: "04:00" }],
+      durationMin: 60,
+      bufferMin: 0,
+    });
+    const starts = day.map((s) => s.startAt.getTime());
+    // 60-minute appointments on a 15-minute grid across five real hours: starts at 0,15,...,240 minutes minus 60 = 17.
+    expect(day).toHaveLength(17);
+    expect(starts.every((t, i) => i === 0 || t > starts[i - 1])).toBe(true);
+    expect(day.every((s) => s.endAt.getTime() - s.startAt.getTime() === 60 * 60_000)).toBe(true);
+    // The first slot is 00:00 EDT (04:00Z) and the last one ends exactly at 04:00 EST (09:00Z).
+    expect(iso(day[0].startAt)).toBe("2031-11-02T04:00:00.000Z");
+    expect(iso(day[day.length - 1].endAt)).toBe("2031-11-02T09:00:00.000Z");
+  });
 });

@@ -124,6 +124,8 @@ model Booking {
   updatedAt  DateTime      @updatedAt
 
   @@index([startAt])
+  // Serves the slot grid (status = CONFIRMED and a startAt range) and the reminder queue.
+  @@index([status, startAt])
   @@index([customerId])
   @@index([serviceId])
 }

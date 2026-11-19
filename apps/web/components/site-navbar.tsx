@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
@@ -28,11 +28,16 @@ const linkClass = "rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 
 // Desktop: inline links. Below md: a menu button toggles a stacked panel.
 export function SiteNavbar({ user }: { user: NavUser }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  // Remembers the path the menu was opened on. A change during render collapses the menu after navigation,
+  // without an effect that sets state.
+  const [menuPath, setMenuPath] = useState<string | null>(null);
   const pathname = usePathname();
   const links = linksFor(user);
 
-  // Collapse the mobile menu after navigation.
-  useEffect(() => setMenuOpen(false), [pathname]);
+  if (menuPath !== pathname) {
+    setMenuPath(pathname);
+    setMenuOpen(false);
+  }
 
   const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`));
 

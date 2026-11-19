@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@booking/db";
 import { HttpError } from "@/lib/authz";
 import { errorResponse, readJson } from "@/lib/http";
+import { assertWithinRateLimit, clientIp, RATE_LIMITS } from "@/lib/rate-limit";
 import { registerSchema } from "@/lib/validation";
 
 const BCRYPT_ROUNDS = 12;
@@ -10,6 +11,7 @@ const BCRYPT_ROUNDS = 12;
 // Self-service signup only creates CUSTOMER accounts. Owners and admins are provisioned by seed or DB.
 export async function POST(req: Request) {
   try {
+    assertWithinRateLimit(`register:${clientIp(req)}`, RATE_LIMITS.register);
     const input = registerSchema.parse(await readJson(req));
 
     const existing = await prisma.user.findUnique({ where: { email: input.email } });
